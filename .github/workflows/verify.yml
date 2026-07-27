@@ -25,21 +25,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: install delivery package
-        run: |
-          git clone https://github.com/Viktorxyz/opencode-delivery.git /tmp/opencode-delivery
-          node -e "console.log(require('/tmp/opencode-delivery/package.json').version)"
-      - name: doctor
-        run: node -e "import('/tmp/opencode-delivery/src/doctor.js').then(m=>m.doctor(process.cwd(),null).then(r=>process.exit(r.checks.every(c=>c.ok)?0:1)))"
-      - name: project verification
-        run: |
-          node -e "
-          import('/tmp/opencode-delivery/src/adapter.js').then(async ({loadAdapter}) => {
-            const r = await loadAdapter(process.cwd());
-            if (!r.ok) { console.error(r.error); process.exit(2); }
-            for (const c of r.adapter.verification?.commands ?? []) {
-              const proc = (await import('node:child_process')).spawnSync(c.argv[0], c.argv.slice(1), { stdio: 'inherit' });
-              if (proc.status !== 0) process.exit(proc.status ?? 1);
-            }
-          })
-          "
+      - name: install dependencies
+        run: npm install --no-audit --no-fund
+      - name: verify
+        run: npm run verify
