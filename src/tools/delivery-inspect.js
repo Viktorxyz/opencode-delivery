@@ -12,7 +12,7 @@ import { readManifest } from "../state/manifest-store.js";
 export function createInspectTool(deps) {
   return async function inspect(input) {
     const manifest = await readManifest(deps.repoRoot, input.taskId);
-    const doc = await doctor(deps.repoRoot, deps.packageVersion, deps.adapter ?? null);
+    const doc = await doctor(deps.repoRoot, deps.packageVersion);
     return {
       contractVersion: 1,
       manifest: manifest ?? null,

@@ -2,7 +2,7 @@
 
 > Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
 >
-> **Status:** v0.1.2. The full lifecycle is green and covered by deterministic unit tests (99/99) and a strict TypeScript consumer-fixture typecheck that imports every public value export. The reviewer agent now invokes `delivery_review`; cleanup tolerates post-merge branch deletion; path-escape and bootstrap-failure recovery are enforced; the consumer-fixture typecheck catches `.d.ts` drift before merge.
+> **Status:** v0.1.3. The full lifecycle is green and covered by deterministic unit tests (113/113) plus two TypeScript checks: the strict consumer-fixture typecheck that imports every public value export, and the source-level `tsc --checkJs --allowJs` typecheck over `src/**/*.{js,mjs}` that catches `no-undef` style drift. The reviewer agent is now an isolated mutation-bounded subagent; `delivery_ready` / `delivery_merge` query CI by PR identity; `delivery_review` refuses to record a SHA it did not review; `delivery_cleanup` uses a CAS-style `git update-ref -d` and recovers bootstrap-failure manifests.
 
 ---
 
@@ -66,7 +66,7 @@ The package **does not** own:
 
 ## Status
 
-The reusable core is operational at v0.1.2. The full lifecycle is covered by deterministic unit tests plus a strict TypeScript consumer-fixture typecheck: `npm run verify` runs `format:check`, `lint`, `typecheck` (which now includes `tsc --noEmit` against `tests/fixtures/consumer.ts`), and the test suite against 24 suites across 22 test files. All five steps are green at HEAD; **99/99 tests pass** in a single deterministic run.
+The reusable core is operational at v0.1.3. The full lifecycle is covered by deterministic unit tests plus two TypeScript typechecks: `npm run verify` runs `format:check`, `lint`, `typecheck` (which chains `node --check`, the consumer-fixture `tsc --noEmit`, and the source-level `tsc --checkJs --allowJs`), and the test suite against 32 suites across 27 test files. All five steps are green at HEAD; **113/113 tests pass** in a single deterministic run.
 
 ### What is implemented in v0.1.1
 

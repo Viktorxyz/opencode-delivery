@@ -45,7 +45,14 @@ export function createReviewTool(deps) {
       };
     }
 
-    if (input.headSha && input.headSha !== prHead) {
+    if (!input.headSha) {
+      return {
+        kind: "missing-head-sha",
+        prHeadSha: prHead,
+      };
+    }
+
+    if (input.headSha !== prHead) {
       return {
         kind: "head-mismatch",
         reviewSha: input.headSha,

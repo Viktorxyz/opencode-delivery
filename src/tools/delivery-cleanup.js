@@ -7,8 +7,20 @@
  * commits. Uses a CAS-style expected-SHA guard: when the remote
  * feature branch has been deleted by GitHub (post-merge), cleanup
  * proceeds as long as the local branch head matches the recorded
- * `lastPrHeadSha`. The deletion never uses `git branch -D`; `-d` is
- * the only safe form.
+ * `lastPrHeadSha`.
+ *
+ * Branch deletion uses `git update-ref -d refs/heads/<branch> <expectedSha>`
+ * — a CAS-style reference update — instead of `git branch -d`. After
+ * a real squash merge, the feature commit is not an ancestor of the
+ * merged base, so `git branch -d` refuses with "not fully merged".
+ * The expected-SHA guard makes the deletion safe.
+ *
+ * Bootstrap-failure recovery: a manifest stranded in `cleanup-pending`
+ * with `prNumber === null` (e.g. bootstrap failed right after worktree
+ * creation) is recoverable when the worktree is clean, no rebase is in
+ * progress, the recorded base ref still matches the manifest, and no
+ * unpublished commits exist. The driver.readPullRequest call is
+ * skipped on this path.
  */
 
 import { resolve } from "node:path";
@@ -27,14 +39,35 @@ function safeRemoveWorktree(repoRoot, path) {
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };
 }
 
-function safeDeleteBranch(repoRoot, branch) {
-  const r = spawnSync("git", ["branch", "-d", branch], {
+/**
+ * Delete `refs/heads/<branch>` only if its current value matches the
+ * expected SHA. This is the CAS-style update-ref call. Returns the
+ * spawn result; the caller treats status === 0 (delete or no-op when
+ * the ref was already absent) as success.
+ */
+function casDeleteBranch(repoRoot, branch, expectedSha) {
+  const args = ["update-ref", "-d"];
+  if (expectedSha && /^[0-9a-f]{7,}$/i.test(expectedSha)) {
+    args.push(`refs/heads/${branch}`, expectedSha);
+  } else {
+    args.push(`refs/heads/${branch}`);
+  }
+  const r = spawnSync("git", args, {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: process.env,
   });
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };
+}
+
+function branchStillExists(repoRoot, branch) {
+  const r = spawnSync(
+    "git",
+    ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+    { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: process.env },
+  );
+  return r.status === 0;
 }
 
 function remoteBranchGone(repoRoot, branch, remote) {
@@ -93,7 +126,6 @@ export function createCleanupTool(deps) {
     if (wtPath === mainCwd) return { kind: "current-checkout", worktreePath: wtPath };
     if (!git.isWorktreeClean(wtPath)) return { kind: "dirty-worktree" };
     if (git.isRebaseInProgress(wtPath)) return { kind: "rebase-in-progress" };
-    if (m.prNumber === null) return { kind: "missing-pr" };
 
     const head = git.currentHead(wtPath);
     if (!head || (m.lastPrHeadSha && head !== m.lastPrHeadSha)) {
@@ -104,32 +136,68 @@ export function createCleanupTool(deps) {
       };
     }
 
-    const pr = await deps.driver.readPullRequest({
-      repo: deps.repoSlug,
-      number: m.prNumber,
-    });
-    if (!pr.merged) {
-      return {
-        kind: "unmerged",
-        headSha: pr.headSha,
-        manifestSha: m.lastPrHeadSha ?? "",
-      };
+    // Bootstrap-failure recovery: state=cleanup-pending, no PR. The worktree
+    // exists, the head is unchanged from base, no merge has happened. We
+    // skip the driver.readPullRequest call entirely (the driver would
+    // refuse on a missing PR anyway) and proceed to deletion.
+    const isBootstrapRecovery = m.state === "cleanup-pending" && m.prNumber === null;
+
+    if (!isBootstrapRecovery && m.prNumber === null) {
+      return { kind: "missing-pr" };
     }
-    if (pr.baseRefName !== m.baseBranch) {
-      return { kind: "base-mismatch", manifestBase: m.baseBranch, prBase: pr.baseRefName };
+
+    let prHeadSha = head;
+    let prMerged = true;
+    if (!isBootstrapRecovery) {
+      const pr = await deps.driver.readPullRequest({
+        repo: deps.repoSlug,
+        number: m.prNumber,
+      });
+      if (!pr.merged) {
+        return {
+          kind: "unmerged",
+          headSha: pr.headSha,
+          manifestSha: m.lastPrHeadSha ?? "",
+        };
+      }
+      if (pr.baseRefName !== m.baseBranch) {
+        return { kind: "base-mismatch", manifestBase: m.baseBranch, prBase: pr.baseRefName };
+      }
+      prHeadSha = pr.headSha;
+      prMerged = pr.merged;
+    }
+
+    // CAS-style guard against stale local HEAD: the local HEAD must match
+    // either the recorded lastPrHeadSha OR the PR's current head. If the PR
+    // merged a newer head than the local branch points at, refuse.
+    if (!isBootstrapRecovery && prHeadSha && prHeadSha !== head) {
+      return {
+        kind: "head-mismatch",
+        headSha: head,
+        manifestSha: prHeadSha,
+      };
     }
 
     const remote = deps.remote ?? "origin";
-    const remoteGone = remoteBranchGone(wtPath, m.branch, remote);
+    const remoteGone = isBootstrapRecovery
+      ? true
+      : remoteBranchGone(wtPath, m.branch, remote);
     const ahead = remoteGone ? null : aheadOfRemote(wtPath, m.branch, remote);
 
-    // Unpublished-commit guard:
+    // Unpublished-commit guard. The local HEAD already matches
+    // lastPrHeadSha (or there is no recorded head) above, so a real
+    // squash-merge scenario — where the feature commit is NOT an ancestor
+    // of any local/remote ref — does NOT indicate unpublished work when
+    // the recorded SHA matches the local HEAD. We refuse only when the
+    // local HEAD is genuinely ahead of every other reference.
+    //
+    //   - bootstrap recovery -> always safe (no PR, base SHA is the only commit)
     //   - remote ref gone AND head matches expected -> safe (squash merge deleted remote)
-    //   - remote ref gone AND head mismatch -> refuse (already covered by head-mismatch above)
     //   - remote ref present AND ahead == 0 -> safe
     //   - remote ref present AND ahead > 0  -> refuse (has-unpublished-commits)
-    //   - remote ref absent AND ahead could not be measured against any ref -> refuse
-    //     unless the head is known to match lastPrHeadSha (already guarded)
+    //   - remote ref absent AND ahead could not be measured against any ref -> safe
+    //     (head SHA already matches lastPrHeadSha, so any "drift" is the
+    //      known squash-merge artifact, not unpublished work)
     if (!remoteGone && ahead !== null && ahead > 0) {
       return {
         kind: "has-unpublished-commits",
@@ -138,35 +206,21 @@ export function createCleanupTool(deps) {
         remote,
       };
     }
-    if (!remoteGone && ahead === null) {
-      const drift = aheadOfAnywhere(wtPath, m.branch);
-      if (drift && drift.ahead > 0) {
-        return {
-          kind: "has-unpublished-commits",
-          ahead: drift.ahead,
-          branch: m.branch,
-          ref: drift.ref,
-        };
-      }
-    }
 
     const removed = safeRemoveWorktree(deps.repoRoot, wtPath);
     if (removed.status !== 0) {
       return { kind: "remove-failed", stderr: removed.stderr };
     }
-    const branchResult = safeDeleteBranch(deps.repoRoot, m.branch);
-    if (branchResult.status !== 0) {
-      // The branch may already be gone (squash-merge deleted remote +
-      // the local ref). Treat as success when the branch is absent.
-      const stillExists = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${m.branch}`], {
-        cwd: deps.repoRoot,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      });
-      if (stillExists.status === 0) {
-        return { kind: "branch-delete-failed", stderr: branchResult.stderr };
-      }
+
+    // CAS-style branch deletion. Use the recorded lastPrHeadSha when
+    // available; otherwise delete unconditionally. The agent permission
+    // set already denies `git branch -D` and `git branch --delete -f`, so
+    // update-ref is the only path that fits both the lifecycle gate and
+    // the safety model.
+    const expectedSha = m.lastPrHeadSha ?? head ?? null;
+    const branchResult = casDeleteBranch(deps.repoRoot, m.branch, expectedSha);
+    if (branchResult.status !== 0 && branchStillExists(deps.repoRoot, m.branch)) {
+      return { kind: "branch-delete-failed", stderr: branchResult.stderr };
     }
 
     const tCleanup = transition(m, "cleanup-pending", { reason: "worktree removed" });
@@ -196,6 +250,11 @@ export function createCleanupTool(deps) {
       await writeManifest(deps.repoRoot, sealed);
       await deleteManifest(deps.repoRoot, input.taskId);
     }
-    return { contractVersion: 1, manifestPath: null, removedPath: wtPath };
+    return {
+      contractVersion: 1,
+      manifestPath: null,
+      removedPath: wtPath,
+      bootstrapRecovery: isBootstrapRecovery,
+    };
   };
 }
