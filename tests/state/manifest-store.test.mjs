@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { listManifests, readManifest, writeManifest, deleteManifest } from "../../src/state/manifest-store.ts";
-import { createManifest } from "../../src/state/lifecycle.js";
+import { listManifests, readManifest, writeManifest, deleteManifest } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/state/manifest-store.ts";
+import { createManifest } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/state/lifecycle.ts";
 
 async function makeBareRepo() {
   const dir = await mkdtemp(resolve(tmpdir(), "ocd-test-"));

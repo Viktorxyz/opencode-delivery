@@ -1,6 +1,6 @@
 import { test, suite } from "node:test";
 import assert from "node:assert/strict";
-import { STATES, createManifest, transition, canTransition, isTerminal, mustRerunReview, mustRerunVerifier } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/state/lifecycle.js";
+import { STATES, createManifest, transition, canTransition, isTerminal, mustRerunReview, mustRerunVerifier } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/state/lifecycle.ts";
 
 const baseInput = () => ({
   taskId: "task-1",

@@ -1,7 +1,7 @@
 import { test, suite } from "node:test";
 import assert from "node:assert/strict";
-import { createGhDriver } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/drivers/gh-cli.js";
-import { parseRepoSlug } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/drivers/github.js";
+import { createGhDriver } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/drivers/gh-cli.ts";
+import { parseRepoSlug } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/drivers/github.ts";
 
 suite("github driver", { concurrency: false }, () => {
 test("parseRepoSlug accepts owner/name", { serial: true }, () => {

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 
-import { loadAdapter, validateAdapter, writeLock, readLock, ADAPTER_CONTRACT_VERSION } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/adapter.js";
+import { loadAdapter, validateAdapter, writeLock, readLock, ADAPTER_CONTRACT_VERSION } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/adapter.ts";
 
 const minimal = { contractVersion: 1 };
 
