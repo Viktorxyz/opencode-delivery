@@ -2,13 +2,15 @@
  * delivery_issue tool.
  *
  * Ensures an issue exists for the task. Always idempotent: if a
- * matching open issue already exists, the driver returns it and we
- * reuse the manifest. Always links the PR to the issue via `Closes #N`
- * on the PR body (enforced by the gh driver).
+ * manifest already exists for the taskId, the existing state is
+ * preserved (no SHA history is dropped). The issue on GitHub is
+ * matched by title and reused; if missing, a new issue is created.
+ * The PR is always linked to the issue via `Closes #N` on the PR
+ * body (enforced by the gh driver).
  */
 
 import { createManifest, transition } from "../state/lifecycle.js";
-import { writeManifest } from "../state/manifest-store.js";
+import { readManifest, writeManifest } from "../state/manifest-store.js";
 
 export function createIssueTool(deps) {
   return async function issue(input) {
@@ -16,6 +18,18 @@ export function createIssueTool(deps) {
     if (!input.title) return { kind: "missing-input", field: "title" };
     if (!input.baseBranch) return { kind: "missing-input", field: "baseBranch" };
     if (!input.branch) return { kind: "missing-input", field: "branch" };
+
+    const existing = await readManifest(deps.repoRoot, input.taskId);
+    if (existing) {
+      return {
+        contractVersion: 1,
+        created: false,
+        issueNumber: existing.issueNumber,
+        issueUrl: `https://github.com/${deps.repoSlug}/issues/${existing.issueNumber}`,
+        manifestPath: "preserved",
+        preserved: true,
+      };
+    }
 
     const ensured = await deps.driver.ensureIssue({
       repo: deps.repoSlug,
@@ -36,8 +50,8 @@ export function createIssueTool(deps) {
       lastReviewerSha: null,
       lastVerifierSha: null,
     });
-    // Idempotent self-transition so re-running delivery_issue does not
-    // fail when the manifest already lives in issue-linked.
+    // Idempotent self-transition so re-running delivery_issue from a
+    // manifest that already lives in issue-linked is a no-op.
     const t = transition(m, "issue-linked", {
       reason: ensured.created ? "issue just created" : "issue reused",
     });
@@ -47,7 +61,10 @@ export function createIssueTool(deps) {
     const next = {
       ...m,
       state: t.to,
-      transitionLog: [...m.transitionLog, { from: t.from, to: t.to, at: t.at, reason: t.reason }],
+      transitionLog: [
+        ...m.transitionLog,
+        { from: t.from, to: t.to, at: t.at, reason: t.reason },
+      ],
       updatedAt: new Date().toISOString(),
     };
     const path = await writeManifest(deps.repoRoot, next);

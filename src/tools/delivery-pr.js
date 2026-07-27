@@ -2,12 +2,23 @@
  * delivery_pr tool.
  *
  * Opens a draft PR linked to the issue on first call. Subsequent calls
- * refresh the PR body with the latest evidence (test summary, latest
- * verifier SHA, etc.) and re-read the head SHA from the GitHub driver.
+ * refresh the PR body, but always preserve the canonical
+ * `Closes #N` reference (and any other persistent footer lines) so
+ * the PR never silently drops its link to the originating issue.
  */
 
 import { readManifest, writeManifest } from "../state/manifest-store.js";
 import { transition } from "../state/lifecycle.js";
+
+function preserveClosingReference(existingBody, issueNumber) {
+  if (!existingBody) return null;
+  const match = existingBody.match(/Closes\s+#(\d+)/i);
+  if (match) {
+    if (match[1] === String(issueNumber)) return existingBody;
+    return existingBody.replace(/Closes\s+#\d+/i, `Closes #${issueNumber}`);
+  }
+  return `${existingBody}\n\nCloses #${issueNumber}`;
+}
 
 export function createPrTool(deps) {
   return async function pr(input) {
@@ -43,15 +54,25 @@ export function createPrTool(deps) {
       return { contractVersion: 1, pr: opened, manifestPath: path };
     }
 
+    // Refresh path: keep the existing `Closes #N` line on the new body.
+    const existingPr = await deps.driver.readPullRequest({
+      repo: deps.repoSlug,
+      number: m.prNumber,
+    });
+    const mergedBody = preserveClosingReference(
+      input.body,
+      m.issueNumber,
+    ) ?? input.body;
+
     await deps.driver.updatePullRequestBody({
       repo: deps.repoSlug,
       number: m.prNumber,
-      body: input.body,
+      body: mergedBody,
     });
-    const refreshed = await deps.driver.refreshHead({
-      repo: deps.repoSlug,
-      number: m.prNumber,
-    });
+    const refreshed =
+      typeof existingPr?.headSha === "string" && existingPr.headSha
+        ? existingPr.headSha
+        : await deps.driver.refreshHead({ repo: deps.repoSlug, number: m.prNumber });
     const next = {
       ...m,
       lastPrHeadSha: refreshed,
@@ -71,15 +92,15 @@ export function createPrTool(deps) {
       contractVersion: 1,
       pr: {
         number: m.prNumber,
-        url: "",
-        baseRefName: m.baseBranch,
-        headRefName: m.branch,
+        url: existingPr?.url ?? "",
+        baseRefName: existingPr?.baseRefName ?? m.baseBranch,
+        headRefName: existingPr?.headRefName ?? m.branch,
         headSha: refreshed,
-        draft: true,
-        mergeable: "UNKNOWN",
-        mergeStateStatus: "UNKNOWN",
-        merged: false,
-        mergedAt: null,
+        draft: existingPr?.draft ?? true,
+        mergeable: existingPr?.mergeable ?? "UNKNOWN",
+        mergeStateStatus: existingPr?.mergeStateStatus ?? "UNKNOWN",
+        merged: existingPr?.merged ?? false,
+        mergedAt: existingPr?.mergedAt ?? null,
       },
       manifestPath: path,
     };

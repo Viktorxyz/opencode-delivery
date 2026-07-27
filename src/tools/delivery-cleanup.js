@@ -4,9 +4,11 @@
  * Removes the agent-owned local worktree once the PR is confirmed
  * merged, the worktree is clean, the head matches the merged PR, the
  * base branch matches the manifest's, and there are no unpublished
- * commits. Refuses dirty worktrees, rebases, base mismatches, and
- * unmerged PRs. Uses `git branch -d` (not `-D`) so a branch with
- * unmerged commits survives cleanup.
+ * commits. Uses a CAS-style expected-SHA guard: when the remote
+ * feature branch has been deleted by GitHub (post-merge), cleanup
+ * proceeds as long as the local branch head matches the recorded
+ * `lastPrHeadSha`. The deletion never uses `git branch -D`; `-d` is
+ * the only safe form.
  */
 
 import { resolve } from "node:path";
@@ -26,8 +28,6 @@ function safeRemoveWorktree(repoRoot, path) {
 }
 
 function safeDeleteBranch(repoRoot, branch) {
-  // `git branch -d` only succeeds when the branch is fully merged; that
-  // is the exact safety property we want. Never use `-D` here.
   const r = spawnSync("git", ["branch", "-d", branch], {
     cwd: repoRoot,
     encoding: "utf8",
@@ -37,7 +37,17 @@ function safeDeleteBranch(repoRoot, branch) {
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };
 }
 
-function aheadCount(repoRoot, branch, remote) {
+function remoteBranchGone(repoRoot, branch, remote) {
+  const r = spawnSync("git", ["ls-remote", "--heads", remote, branch], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env,
+  });
+  return r.status === 0 && !r.stdout.includes(`refs/heads/${branch}`);
+}
+
+function aheadOfRemote(repoRoot, branch, remote) {
   const r = spawnSync(
     "git",
     ["rev-list", "--count", `${remote}/${branch}..${branch}`],
@@ -46,6 +56,28 @@ function aheadCount(repoRoot, branch, remote) {
   if (r.status !== 0) return null;
   const n = parseInt(r.stdout.trim(), 10);
   return Number.isFinite(n) ? n : null;
+}
+
+function aheadOfAnywhere(repoRoot, branch) {
+  const r = spawnSync(
+    "git",
+    ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+    { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: process.env },
+  );
+  if (r.status !== 0) return null;
+  const heads = r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+  for (const ref of heads) {
+    if (ref === `refs/heads/${branch}`) continue;
+    const r2 = spawnSync(
+      "git",
+      ["rev-list", "--count", `${ref}..${branch}`],
+      { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: process.env },
+    );
+    if (r2.status !== 0) continue;
+    const n = parseInt(r2.stdout.trim(), 10);
+    if (Number.isFinite(n) && n > 0) return { ref, ahead: n };
+  }
+  return null;
 }
 
 export function createCleanupTool(deps) {
@@ -88,14 +120,34 @@ export function createCleanupTool(deps) {
     }
 
     const remote = deps.remote ?? "origin";
-    const ahead = aheadCount(wtPath, m.branch, remote);
-    if (ahead === null || ahead > 0) {
+    const remoteGone = remoteBranchGone(wtPath, m.branch, remote);
+    const ahead = remoteGone ? null : aheadOfRemote(wtPath, m.branch, remote);
+
+    // Unpublished-commit guard:
+    //   - remote ref gone AND head matches expected -> safe (squash merge deleted remote)
+    //   - remote ref gone AND head mismatch -> refuse (already covered by head-mismatch above)
+    //   - remote ref present AND ahead == 0 -> safe
+    //   - remote ref present AND ahead > 0  -> refuse (has-unpublished-commits)
+    //   - remote ref absent AND ahead could not be measured against any ref -> refuse
+    //     unless the head is known to match lastPrHeadSha (already guarded)
+    if (!remoteGone && ahead !== null && ahead > 0) {
       return {
         kind: "has-unpublished-commits",
-        ahead: ahead ?? -1,
+        ahead,
         branch: m.branch,
         remote,
       };
+    }
+    if (!remoteGone && ahead === null) {
+      const drift = aheadOfAnywhere(wtPath, m.branch);
+      if (drift && drift.ahead > 0) {
+        return {
+          kind: "has-unpublished-commits",
+          ahead: drift.ahead,
+          branch: m.branch,
+          ref: drift.ref,
+        };
+      }
     }
 
     const removed = safeRemoveWorktree(deps.repoRoot, wtPath);
@@ -104,7 +156,17 @@ export function createCleanupTool(deps) {
     }
     const branchResult = safeDeleteBranch(deps.repoRoot, m.branch);
     if (branchResult.status !== 0) {
-      return { kind: "branch-delete-failed", stderr: branchResult.stderr };
+      // The branch may already be gone (squash-merge deleted remote +
+      // the local ref). Treat as success when the branch is absent.
+      const stillExists = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${m.branch}`], {
+        cwd: deps.repoRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      });
+      if (stillExists.status === 0) {
+        return { kind: "branch-delete-failed", stderr: branchResult.stderr };
+      }
     }
 
     const tCleanup = transition(m, "cleanup-pending", { reason: "worktree removed" });

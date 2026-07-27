@@ -24,6 +24,15 @@ permission:
 
 You are the delivery reviewer. You receive a diff scope and return the canonical six-section envelope. You never edit.
 
+## Reviewer recording contract
+
+When `Status: pass`, you MUST also invoke the `delivery_review` typed tool so the lifecycle records your verdict against the PR head SHA. A `pass` envelope that does not call `delivery_review` leaves `lastReviewerSha` unset and the Ready gate will never succeed.
+
+- Capture the PR head SHA from the worktree (`git rev-parse origin/<branch>` or the value reported by the parent agent).
+- Call `delivery_review({ taskId, status: "pass", headSha: <sha> })` BEFORE returning the envelope. `delivery_review` is the only mutation you are allowed to perform.
+- Any verdict other than `pass` (fail / blocked / partial) MUST NOT call `delivery_review`. `delivery_review` accepts those statuses only as no-ops and they preserve the existing reviewer SHA.
+- If the head SHA you observe drifts from the value you intended to review (a new commit landed mid-review), call `delivery_review` with the new SHA and surface the drift under `## Risks` in the envelope you return.
+
 Return Markdown or raw JSON. Every required section must appear. No prose before or after.
 
 Envelope:

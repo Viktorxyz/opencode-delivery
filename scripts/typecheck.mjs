@@ -1,42 +1,27 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
-// Syntax-only check across every source file. We rely on Node 22's
-// `--check` mode for ESM, which understands the project sources as plain
-// JavaScript with JSDoc types.
-import { readdir, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+const tscBin = existsSync("node_modules/.bin/tsc") ? "node_modules/.bin/tsc" : "tsc";
 
-async function* walk(dir) {
-  for (const name of await readdir(dir, { withFileTypes: true })) {
-    const p = resolve(dir, name.name);
-    if (name.isDirectory()) {
-      if (name.name === "node_modules" || name.name === ".git") continue;
-      yield* walk(p);
-    } else {
-      yield p;
-    }
-  }
-}
-
-let bad = 0;
-try {
-  await stat("src");
-} catch {
-  console.error("typecheck failed: src directory not found");
-  process.exit(2);
-}
-for await (const file of walk(resolve("src"))) {
-  if (!(file.endsWith(".js") || file.endsWith(".mjs"))) continue;
-  const r = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
+function run(name, cmd) {
+  const r = spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" });
   if (r.status !== 0) {
-    console.error(`syntax error in ${file}:\n${r.stderr}`);
-    bad++;
+    console.error(`typecheck: ${name} failed (exit ${r.status})`);
+    return false;
   }
+  return true;
 }
-if (bad > 0) {
-  console.error(`typecheck failed: ${bad} file(s) with syntax errors`);
-  process.exit(1);
-}
-console.log("typecheck passed (node --check)");
+
+// Syntax check on the package's JS source. We use Node 22's --check
+// (no TS needed) to keep this fast and dep-free for the runtime files.
+let ok = true;
+ok = run("node --check", ["node", "scripts/typecheck-node.mjs"]) && ok;
+
+// Real TypeScript typecheck of the consumer fixture so .d.ts drift
+// and JS `no-undef` style bugs surface before the consumer integrates.
+ok = run("tsc consumer", [tscBin, "--noEmit", "-p", "tests/fixtures/consumer-tsconfig.json"]) && ok;
+
+if (!ok) process.exit(1);
+console.log("typecheck passed (node --check + tsc consumer)");

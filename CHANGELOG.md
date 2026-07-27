@@ -4,6 +4,46 @@ All notable changes to `opencode-delivery` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-07-27
+
+### Added
+- TypeScript consumer fixture (`tests/fixtures/consumer.ts`) that imports every public value export from `src/index.js` and uses the lifecycle, gates, doctor, and every tool factory with mock driver + adapter deps.
+- Strict consumer tsconfig (`tests/fixtures/consumer-tsconfig.json`) with `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noUnusedLocals`, `noUnusedParameters`, `useUnknownInCatchVariables`. Compiled via `tsc --noEmit` in `scripts/typecheck.mjs`.
+- New regression tests under `tests/tools/` and `tests/agents/`:
+  - `tests/types-value-exports.test.mjs` (consumer-fixture compile, public-export parity, value-export coverage).
+  - `tests/tools/issue-idempotent.test.mjs` (delivery_issue never resets an existing manifest, even after draft-open).
+  - `tests/tools/worktree-path-escape.test.mjs` (`../../` escape and absolute paths refused with `path-escape` envelope; state never advances).
+  - `tests/tools/bootstrap-failure-recovery.test.mjs` (failed bootstrap transitions the manifest to `cleanup-pending` with `fatalReason`; `scanRecovery` surfaces the manifest).
+  - `tests/tools/pr-body-keeps-closing.test.mjs` (refresh keeps `Closes #N` even when the new body omits it).
+  - `tests/drivers/read-checks-by-pr.test.mjs` (driver queries GitHub by PR number / branch when available; SHA fallback only when neither is given).
+  - `tests/tools/cleanup-after-branch-delete.test.mjs` (cleanup succeeds when the remote feature branch is gone AND head matches expected SHA; refuses when local head has drifted).
+  - `tests/tools/verify-manifest-path.test.mjs` (delivery_verify returns the actual manifest path under git-common-dir, not the adapter path).
+  - `tests/agents/delivery-reviewer-contract.test.mjs` (the reviewer agent instructs itself to call `delivery_review` with the head SHA on pass).
+- TypeScript dependency (`typescript@^5.6.0`) added to `devDependencies` so the consumer fixture compiles locally without a hoisted install.
+
+### Changed
+- `src/types.d.ts` now declares every public value export with the right signature (function-return types, optional fields, branded sha/branch types). Consumers get real type checking instead of `any` for the package surface.
+- `src/index.js` re-exports the same surface; runtime behaviour unchanged.
+- `package.json` bumps to `0.1.2`.
+- `scripts/typecheck.mjs` now chains `node --check` (over `scripts/typecheck-node.mjs`) and `tsc --noEmit -p tests/fixtures/consumer-tsconfig.json` so JS syntax errors AND `.d.ts` drift are both detected.
+- `scripts/verify.mjs` covers the new test files (24 suites across 22 test files).
+- `delivery-reviewer` agent now instructs itself to invoke `delivery_review` with the PR head SHA on `Status: pass`. Refuses to record on any other verdict.
+
+### Fixed
+- `delivery_issue` now reads the existing manifest before creating one. A second call after `draft-open` returns the same `issueNumber` and preserves `lastReviewerSha` / `lastVerifierSha` / `prNumber` instead of overwriting them.
+- `delivery_worktree` refuses any resolved path that escapes `adapter.worktree.root` (`../../` or absolute paths) with a typed `path-escape` envelope; the manifest does not advance.
+- `delivery_worktree` bootstrap failure now writes `fatalReason` and transitions the manifest to `cleanup-pending` so the recovery scan can act on it.
+- `delivery_pr` refresh path now merges the existing `Closes #N` line into the new body when missing, so the PR never silently drops its link to the originating issue.
+- `gh-cli.readChecks` now prefers PR number / branch over the SHA fallback. The SHA is used only when no PR identity is provided.
+- `delivery_cleanup` now tolerates the remote feature branch being deleted by GitHub after squash merge: a CAS-style expected-SHA guard accepts cleanup when the local branch head matches `lastPrHeadSha` even with the remote ref gone. Head drift still refuses.
+- `delivery_verify` returns the actual manifest file path it just wrote (under `<git-common-dir>/opencode-delivery/manifests/<taskId>.json`), not the adapter path.
+- `delivery_cleanup` falls back to checking any local/remote ref for unpublished commits when the configured remote ref is gone, so the unpublished-commit guard still works for forks.
+
+### Tests
+- `npm run verify` covers 99 tests across 24 suites. All green at HEAD.
+- TypeScript consumer-fixture typecheck enforces declaration drift on every public value export.
+- The reviewer-agent contract test guards against future agents drifting away from `delivery_review`.
+
 ## [0.1.1] — 2026-07-27
 
 ### Added
