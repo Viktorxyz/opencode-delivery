@@ -16,7 +16,7 @@ const steps = [
   ["format:check", ["node", "scripts/format-check.mjs"]],
   ["lint", ["node", "scripts/lint.mjs"]],
   ["typecheck", ["node", "scripts/typecheck.mjs"]],
-  ["test", ["tsx", "--test", "--test-concurrency=1", "--test-reporter=spec", ...testFiles]],
+  ["test", ["tsx", "--test", "--test-concurrency=1", "--test-reporter=spec", "--tsconfig", "tsconfig.json", ...testFiles]],
 ];
 
 let failed = 0;
