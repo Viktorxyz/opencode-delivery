@@ -1,0 +1,42 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "description": "Project plugin shim that loads the reusable opencode-delivery package. Pin the version by replacing <commit-sha> with a real commit SHA before adopting.",
+  "plugin": ["https://github.com/Viktorxyz/opencode-delivery#<commit-sha>"],
+  "agent": {
+    "build": {
+      "permission": {
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "general": "allow",
+          "reviewer": "allow",
+          "verifier": "allow",
+          "delivery-reviewer": "allow",
+          "delivery-verifier": "allow",
+          "plan": "deny"
+        }
+      }
+    }
+  },
+  "permission": {
+    "bash": {
+      "git commit --no-verify *": "deny",
+      "git push --force *": "deny",
+      "git push --force-with-lease *": "deny",
+      "git push -f *": "deny",
+      "git reset --hard *": "deny",
+      "git stash *": "deny",
+      "git worktree remove --force *": "deny",
+      "git branch -D *": "deny",
+      "git worktree remove *": "ask",
+      "git rebase *": "ask",
+      "git merge *": "ask",
+      "gh pr merge --auto *": "deny",
+      "gh pr merge *": "ask",
+      "gh pr close *": "ask",
+      "gh issue delete *": "deny",
+      "gh api *": "ask",
+      "*": "allow"
+    }
+  }
+}

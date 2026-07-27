@@ -1,0 +1,32 @@
+{
+  "name": "opencode-delivery",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tech-stack-neutral OpenCode delivery package: lifecycle state machine, typed tools, reviewer/verifier, project-adapter contract.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "main": "src/index.js",
+  "types": "src/index.js",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "schema",
+    "skills",
+    "agents"
+  ],
+  "scripts": {
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "node scripts/typecheck.mjs",
+    "test": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/state/lifecycle.test.mjs tests/state/manifest-store.test.mjs tests/drivers/git.test.mjs tests/drivers/github.test.mjs tests/recovery.test.mjs tests/doctor.test.mjs tests/adapter.test.mjs",
+    "format:check": "node scripts/format-check.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.1"
+  }
+}
