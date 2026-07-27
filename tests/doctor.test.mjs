@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { doctor } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/doctor.ts";
+import { doctor } from "../src/doctor.js";
 
 suite("doctor", { concurrency: false }, () => {
 test("doctor requires Node>=20", { serial: true }, async () => {

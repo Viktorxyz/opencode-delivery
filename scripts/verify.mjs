@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 const testFiles = [
   "tests/state/lifecycle.test.mjs",
@@ -12,11 +13,12 @@ const testFiles = [
   "tests/adapter.test.mjs",
 ];
 
+const tsxBin = existsSync("node_modules/.bin/tsx") ? "node_modules/.bin/tsx" : "tsx";
 const steps = [
   ["format:check", ["node", "scripts/format-check.mjs"]],
   ["lint", ["node", "scripts/lint.mjs"]],
   ["typecheck", ["node", "scripts/typecheck.mjs"]],
-  ["test", ["tsx", "--test", "--test-concurrency=1", "--test-reporter=spec", "--tsconfig", "tsconfig.json", ...testFiles]],
+  ["test", [tsxBin, "--test", "--test-concurrency=1", "--test-reporter=spec", "--tsconfig", "tsconfig.json", ...testFiles]],
 ];
 
 let failed = 0;

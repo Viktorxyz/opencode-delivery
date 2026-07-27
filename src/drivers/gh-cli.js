@@ -13,8 +13,8 @@ function run(args, opts) {
   opts = opts ?? {};
   return new Promise((resolve, reject) => {
     const proc = spawn("gh", args, {
-      cwd: opts.cwd,
-      env: process.env,
+      cwd,
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -36,16 +36,16 @@ async function ghJson(args, opts) {
 
 function pullRequestSummaryFromView(fields) {
   return {
-    number: fields.number,
-    url: fields.url,
-    baseRefName: fields.baseRefName,
-    headRefName: fields.headRefName,
-    headSha: fields.headRefOid,
-    draft: fields.isDraft,
+    number,
+    url,
+    baseRefName,
+    headRefName,
+    headSha: input.headSha,
+    draft,
     mergeable: fields.mergeable ?? "UNKNOWN",
-    mergeStateStatus: fields.mergeStateStatus,
-    merged: fields.merged,
-    mergedAt: fields.mergedAt,
+    mergeStateStatus,
+    merged,
+    mergedAt,
   };
 }
 
@@ -82,7 +82,7 @@ export function createGhDriver() {
       const number = numMatch && numMatch[1] ? parseInt(numMatch[1], 10) : -1;
       return {
         summary: { number, url, state: "OPEN", pullRequest: null },
-        created: true,
+        created,
       };
     },
 

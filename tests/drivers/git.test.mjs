@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import * as git from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/drivers/git.ts";
+import * as git from "../../src/drivers/git.js";
 
 async function initRepo(dir) {
   const env = { ...process.env, GIT_AUTHOR_NAME: "test", GIT_AUTHOR_EMAIL: "test@local", GIT_COMMITTER_NAME: "test", GIT_COMMITTER_EMAIL: "test@local" };

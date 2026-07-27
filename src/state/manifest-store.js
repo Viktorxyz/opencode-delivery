@@ -8,9 +8,8 @@
 import { readFile, writeFile, rename, mkdir, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import {  Manifest  } from "./lifecycle.js";
 
-async function runGitCommonDir(repoRoot: string){
+async function runGitCommonDir(repoRoot) {
   return new Promise((res, rej) => {
     // `--path-format=absolute` ensures the path is always absolute so
     // downstream `fs` calls never fall back to `process.cwd()`.
@@ -33,11 +32,11 @@ async function runGitCommonDir(repoRoot: string){
   });
 }
 
-function manifestPath(commonDir: string, taskId: string){
+function manifestPath(commonDir,  taskId) {
   return join(commonDir, "opencode-delivery", "manifests", `${taskId}.json`);
 }
 
-export async function writeManifest(repoRoot: string, manifest: Manifest){
+export async function writeManifest(repoRoot,  manifest){
   const commonDir = await runGitCommonDir(repoRoot);
   const path = manifestPath(commonDir, manifest.taskId);
   await mkdir(dirname(path), { recursive: true });
@@ -47,7 +46,7 @@ export async function writeManifest(repoRoot: string, manifest: Manifest){
   return resolve(path);
 }
 
-export async function readManifest(repoRoot: string, taskId: string){
+export async function readManifest(repoRoot,  taskId) {
   const commonDir = await runGitCommonDir(repoRoot);
   const path = manifestPath(commonDir, taskId);
   try {
@@ -58,10 +57,10 @@ export async function readManifest(repoRoot: string, taskId: string){
   }
 }
 
-export async function listManifests(repoRoot: string){
+export async function listManifests(repoRoot) {
   const commonDir = await runGitCommonDir(repoRoot);
   const dir = join(commonDir, "opencode-delivery", "manifests");
-  let names: string[];
+  let names;
   try {
     names = await readdir(dir);
   } catch {
@@ -80,7 +79,7 @@ export async function listManifests(repoRoot: string){
   return out;
 }
 
-export async function deleteManifest(repoRoot: string, taskId: string){
+export async function deleteManifest(repoRoot,  taskId) {
   const commonDir = await runGitCommonDir(repoRoot);
   const path = manifestPath(commonDir, taskId);
   try {
@@ -90,3 +89,4 @@ export async function deleteManifest(repoRoot: string, taskId: string){
     // already gone
   }
 }
+

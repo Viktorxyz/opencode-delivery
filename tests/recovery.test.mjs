@@ -1,6 +1,6 @@
 import { test, suite } from "node:test";
 import assert from "node:assert/strict";
-import { wouldCleanupBeSafe } from "/home/viktorcordas/repos/_bootstrap/opencode-delivery/src/recovery.ts";
+import { wouldCleanupBeSafe } from "../src/recovery.js";
 
 suite("recovery", { concurrency: false }, () => {
 test("wouldCleanupBeSafe accepts the canonical safe shape", { serial: true }, () => {

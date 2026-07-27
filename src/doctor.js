@@ -9,7 +9,7 @@
 import { access } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { ADAPTER_CONTRACT_VERSION, loadAdapter, readLock } from "./adapter.ts";
+import { ADAPTER_CONTRACT_VERSION, loadAdapter, readLock } from "./adapter.js";
 
 async function fileExists(p) {
   try {

@@ -2,8 +2,7 @@
  * GitHub driver contract.
  *
  * The production driver shells out to the GitHub CLI (`gh`); the test
- * driver is implemented as a fixture. The lifecycle code never imports
- * a concrete driver.
+ * driver is implemented* a concrete driver.
  */
 
 export function parseRepoSlug(slug) {

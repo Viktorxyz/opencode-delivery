@@ -1,7 +1,7 @@
 /**
  * Recovery helpers.
  *
- * The recovery layer tolerates interrupted lifecycles:
+ * The recovery layer tolerates interrupted lifecycles
  * - a half-written manifest is repaired by re-reading it
  * - a `cleanup-pending` manifest whose worktree was removed by hand
  *   transitions to `cleaned` only after a safe-check passes
@@ -15,7 +15,7 @@ import { transition } from "./state/lifecycle.js";
 export async function scanRecovery(repoRoot) {
   const manifests = await listManifests(repoRoot);
   const report = {
-    total: manifests.length,
+    total,
     pendingCleanup: 0,
     orphanWorktrees: 0,
     cleaned: 0,
