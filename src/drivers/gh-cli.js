@@ -228,11 +228,25 @@ export function createGhDriver(opts = {}) {
       return pullRequestSummaryFromView(fields);
     },
 
-    async readChecks({ repo, sha, required }) {
+    async readChecks({ repo, sha, number, branch, required }) {
+      // `gh pr checks` accepts a PR identity (number, URL, or branch),
+      // not a commit SHA. Prefer the explicit PR identity when given;
+      // fall back to the SHA only when no PR identity is provided.
+      const target =
+        typeof number === "number" && Number.isFinite(number)
+          ? String(number)
+          : typeof branch === "string" && branch.length > 0
+            ? branch
+            : typeof sha === "string" && sha.length > 0
+              ? String(sha)
+              : null;
+      if (target === null) {
+        throw new Error("readChecks requires either a number, branch, or sha");
+      }
       const r = await run([
         "pr",
         "checks",
-        String(sha),
+        target,
         "--repo",
         repo,
         "--json",

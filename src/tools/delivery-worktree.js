@@ -3,9 +3,11 @@
  *
  * Creates an isolated worktree on a fresh branch from the adapter's
  * configured base ref. Refuses overwrites, refuses conflicts with
- * existing local/remote branches, refuses dirt in the main checkout,
- * and runs the adapter's bootstrap commands before recording the
- * worktree path in the manifest.
+ * existing local/remote branches, refuses paths that escape the
+ * adapter's declared worktree.root, and runs the adapter's bootstrap
+ * commands before recording the worktree path in the manifest. A
+ * failed bootstrap transitions the manifest to `cleanup-pending`
+ * with `fatalReason` so the recovery scan can act on it.
  */
 
 import { resolve } from "node:path";
@@ -35,6 +37,40 @@ function runBootstrap(args, cwd) {
   });
 }
 
+/**
+ * Reject any resolved path that escapes the adapter's declared
+ * `worktree.root`. The path must be relative to `repoRoot`, must not
+ * contain `..` segments after normalisation, and must not be an
+ * absolute path outside `repoRoot`.
+ */
+function isPathContained(repoRoot, worktreeRoot, candidatePath) {
+  const rootAbs = resolve(repoRoot, worktreeRoot);
+  const normalized = resolve(candidatePath);
+  if (normalized !== rootAbs && !normalized.startsWith(rootAbs + "/")) {
+    return false;
+  }
+  return true;
+}
+
+async function markBootstrapFailed(repoRoot, manifest, error, argv) {
+  const failed = {
+    ...manifest,
+    state: "cleanup-pending",
+    fatalReason: `bootstrap failed: ${error.message}`,
+    transitionLog: [
+      ...manifest.transitionLog,
+      {
+        from: manifest.state,
+        to: "cleanup-pending",
+        at: Date.now(),
+        reason: `bootstrap failed: ${error.message}`,
+      },
+    ],
+    updatedAt: new Date().toISOString(),
+  };
+  await writeManifest(repoRoot, failed);
+}
+
 export function createWorktreeTool(deps) {
   return async function worktree(input) {
     const m = await readManifest(deps.repoRoot, input.taskId);
@@ -43,7 +79,19 @@ export function createWorktreeTool(deps) {
       return { kind: "manifest-state", state: m.state };
     }
     if (!input.branch) return { kind: "missing-input", field: "branch" };
-    if (!input.worktreeRelativePath) return { kind: "missing-input", field: "worktreeRelativePath" };
+    if (!input.worktreeRelativePath) {
+      return { kind: "missing-input", field: "worktreeRelativePath" };
+    }
+
+    const worktreeRoot = deps.adapter?.worktree?.root ?? ".worktrees";
+    const worktreePath = resolve(deps.repoRoot, input.worktreeRelativePath);
+    if (!isPathContained(deps.repoRoot, worktreeRoot, worktreePath)) {
+      return {
+        kind: "path-escape",
+        resolvedPath: worktreePath,
+        expectedRoot: resolve(deps.repoRoot, worktreeRoot),
+      };
+    }
 
     const remote = deps.remote ?? "origin";
     const hasRemote = git.remoteExists(remote, deps.repoRoot);
@@ -59,7 +107,6 @@ export function createWorktreeTool(deps) {
     if (git.branchExistsRemotely(remote, input.branch, deps.repoRoot)) {
       return { kind: "branch-exists-remotely", branch: input.branch };
     }
-    const worktreePath = resolve(deps.repoRoot, input.worktreeRelativePath);
     if (git.worktreeExists(deps.repoRoot, worktreePath)) {
       return { kind: "worktree-exists" };
     }
@@ -78,7 +125,6 @@ export function createWorktreeTool(deps) {
       return { kind: "create-failed", stderr: "no HEAD after worktree create" };
     }
 
-    // Run adapter-declared bootstrap commands in the new worktree.
     const bootstrap = deps.adapter?.worktree?.bootstrap ?? [];
     for (const argv of bootstrap) {
       if (!Array.isArray(argv) || argv.length === 0) {
@@ -87,6 +133,17 @@ export function createWorktreeTool(deps) {
       try {
         await runBootstrap(argv, worktreePath);
       } catch (e) {
+        await markBootstrapFailed(
+          deps.repoRoot,
+          {
+            ...m,
+            worktreePath,
+            branch: input.branch,
+            baseSha: m.baseSha,
+          },
+          e,
+          argv,
+        );
         return { kind: "bootstrap-failed", stderr: e.message, argv };
       }
     }

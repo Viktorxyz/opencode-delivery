@@ -12,7 +12,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
 import * as git from "../drivers/git.js";
 import { readManifest, writeManifest } from "../state/manifest-store.js";
 import { transition } from "../state/lifecycle.js";
@@ -112,7 +111,7 @@ export function createVerifyTool(deps) {
       ],
       updatedAt: new Date().toISOString(),
     };
-    await writeManifest(deps.repoRoot, next);
+    const manifestPath = await writeManifest(deps.repoRoot, next);
 
     return {
       contractVersion: 1,
@@ -121,7 +120,7 @@ export function createVerifyTool(deps) {
       stdoutTail,
       stderrTail,
       headSha: head,
-      manifestPath: resolve(deps.repoRoot, ".opencode", "delivery.json"),
+      manifestPath,
     };
   };
 }

@@ -2,7 +2,7 @@
 
 > Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
 >
-> **Status:** v0.1.1. Lifecycle, project-adapter, GitHub CLI driver, Git worktree driver, doctor, recovery, gate helper, reviewer-recording tool, and every `delivery_*` typed tool factory are green and covered by deterministic unit tests. 87/87 tests pass under `npm run verify`.
+> **Status:** v0.1.2. The full lifecycle is green and covered by deterministic unit tests (99/99) and a strict TypeScript consumer-fixture typecheck that imports every public value export. The reviewer agent now invokes `delivery_review`; cleanup tolerates post-merge branch deletion; path-escape and bootstrap-failure recovery are enforced; the consumer-fixture typecheck catches `.d.ts` drift before merge.
 
 ---
 
@@ -66,7 +66,7 @@ The package **does not** own:
 
 ## Status
 
-The reusable core is operational at v0.1.1. The full lifecycle is covered by deterministic unit tests: `npm run verify` runs `format:check`, `lint`, `typecheck`, and the test suite against 16 suites across 13 test files. All four steps are green at HEAD; **87/87 tests pass** in a single deterministic run.
+The reusable core is operational at v0.1.2. The full lifecycle is covered by deterministic unit tests plus a strict TypeScript consumer-fixture typecheck: `npm run verify` runs `format:check`, `lint`, `typecheck` (which now includes `tsc --noEmit` against `tests/fixtures/consumer.ts`), and the test suite against 24 suites across 22 test files. All five steps are green at HEAD; **99/99 tests pass** in a single deterministic run.
 
 ### What is implemented in v0.1.1
 
