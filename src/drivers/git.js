@@ -44,6 +44,7 @@ export function listWorktrees(cwd) {
   const r = runGit(["worktree", "list", "--porcelain"], cwd);
   if (r.status !== 0) return [];
   const records = [];
+  /** @type {{ path?: string; branch?: string; head?: string }} */
   let cur = {};
   for (const line of r.stdout.split("\n")) {
     if (line.startsWith("worktree ")) {

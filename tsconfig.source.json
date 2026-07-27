@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*.js",
+    "src/**/*.mjs",
+    "src/types.d.ts",
+    "src/index.d.ts",
+    "src/state/lifecycle.d.ts"
+  ],
+  "exclude": ["node_modules", "tests", "**/*.test.mjs", "**/*.test.js"]
+}

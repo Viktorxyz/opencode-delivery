@@ -39,7 +39,8 @@ export function createMergeTool(deps) {
       const checks = ciDriverAvailable
         ? await deps.driver.readChecks({
             repo: deps.repoSlug,
-            sha: pr.headSha,
+            number: m.prNumber,
+            branch: m.branch,
             required: deps.adapter?.ci?.requiredChecks ?? [],
           })
         : [];

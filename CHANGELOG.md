@@ -4,6 +4,34 @@ All notable changes to `opencode-delivery` are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-07-27
+
+### Fixed
+- `delivery_ready` and `delivery_merge` now pass the PR identity (`number: m.prNumber` and `branch: m.branch`) into `driver.readChecks` instead of the commit SHA. The GitHub CLI rejects SHAs on `gh pr checks`; previously the production callers bypassed the driver's SHA-fallback path entirely and the gate was unreachable.
+- `delivery_review` now requires an explicit `headSha` argument on `Status: pass`. A missing `headSha` returns the typed `missing-head-sha` envelope; a mismatching `headSha` returns `head-mismatch`. The reviewer can no longer silently record a SHA it did not review.
+- `delivery_cleanup` no longer uses `git branch -d` after a real squash merge (which fails with "not fully merged" because the feature commit is not an ancestor of base). It uses a CAS-style `git update-ref -d refs/heads/<branch> <expectedSha>` instead, gated on the recorded `lastPrHeadSha`. When the branch is already absent locally, the CAS call is treated as success.
+- `delivery_cleanup` now accepts the bootstrap-failure recovery shape: a manifest stranded in `cleanup-pending` with `prNumber === null` is removed when the worktree is clean, no rebase is in progress, the recorded SHA matches the local HEAD, and no unpublished commits exist. The driver.readPullRequest call is skipped on this path. The recovery surface also returns `bootstrapRecovery: true` so the parent agent can render the envelope.
+- `delivery_cleanup` no longer runs the `aheadOfAnywhere` drift probe when the local HEAD already matches the recorded `lastPrHeadSha`. After a real squash merge the feature commit is intentionally not an ancestor of any local/remote ref; the SHA guard is sufficient.
+- The `delivery-reviewer` agent frontmatter now explicitly denies every other `delivery_*` tool (`delivery_inspect`, `delivery_issue`, `delivery_worktree`, `delivery_verify`, `delivery_pr`, `delivery_ready`, `delivery_merge`, `delivery_cleanup`) and allows only `delivery_review`. The reviewer is a single-shot, mutation-bounded subagent.
+- `delivery-inspect` no longer passes a third argument to `doctor(repoRoot, packageVersion)` (the runtime signature accepts two arguments; the third was silently ignored).
+- `src/state/lifecycle.d.ts` previously re-exported from a non-existent `./types.js`. Now it declares the runtime exports directly (STATES, createManifest, transition, canTransition, isTerminal, mustRerunReview, mustRerunVerifier, plus the Manifest / LifecycleState / TransitionResult types), so `tsc --checkJs` consumers see the same surface the runtime actually exposes.
+- `src/drivers/git.js` `listWorktrees` annotates the local `cur` accumulator with JSDoc so strict `--checkJs` consumers no longer trip on the partial `{}` initialisation.
+
+### Added
+- New regression tests pinning every P0/P1 defect:
+  - `tests/tools/ready-merge-readchecks.test.mjs` — `delivery_ready` and `delivery_merge` call `driver.readChecks` with `number: m.prNumber`.
+  - `tests/tools/review-headsha-required.test.mjs` — `delivery_review` rejects missing or mismatching `headSha`, records on match, refuses non-pass verdicts.
+  - `tests/tools/cleanup-recovery-no-pr.test.mjs` — `delivery_cleanup` removes worktree + branch + manifest when `state=cleanup-pending && prNumber === null`, and refuses when the worktree is dirty.
+  - `tests/tools/cleanup-real-squash.test.mjs` — `delivery_cleanup` deletes the local feature branch via the CAS guard after a real feature commit + squash-equivalent base commit.
+  - `tests/agents/reviewer-permission-boundary.test.mjs` — frontmatter explicitly allows `delivery_review` and denies every other `delivery_*` tool.
+  - `tests/types/success-envelope-shape.test.mjs` — runtime success envelopes carry the fields consumers rely on (`issueNumber`, `manifestPath`).
+- New `tsconfig.source.json` that runs `tsc --noEmit --allowJs --checkJs` over `src/**/*.{js,mjs}` plus the `.d.ts` companions. Wired into `scripts/typecheck.mjs` as the third step so `no-undef` style bugs surface before merge.
+- `@types/node` added as a dev dependency so the source-level typecheck recognises `node:fs`, `node:path`, and `node:child_process`.
+
+### Tests
+- `npm run verify` covers 113 tests across 32 suites in ~12.6s. All green at HEAD.
+- The new tests are pinned by their filename so a future regression that reintroduces the SHA fallback, the silent reviewer recording, the `git branch -d` failure, or the stranded bootstrap-failure manifest fails the suite immediately.
+
 ## [0.1.2] — 2026-07-27
 
 ### Added
