@@ -2,7 +2,7 @@
 
 > Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
 >
-> **Status:** Bootstrap. No reusable core has shipped yet; the first release is being prepared in a draft PR.
+> **Status:** First release in progress. Adapter schema, lifecycle state machine, GitHub CLI driver, Git worktree driver, doctor, recovery, lifecycle/manifest-store tests are green. Adapter validation tests pass. Tool wrappers are scaffolded; the typed tool set is intentionally conservative for the first release.
 
 ---
 
@@ -13,7 +13,9 @@
 The package ships:
 
 - a **lifecycle state machine** for one issue → one worktree → one PR → one merge → one cleanup;
-- a **typed OpenCode tool surface** (`delivery_inspect`, `delivery_issue`, `delivery_worktree`, `delivery_verify`, `delivery_pr`, `delivery_ready`, `delivery_merge`, `delivery_cleanup`);
+- a **Git worktree driver** (no rebase-after-push, no force-push, no `--force-with-lease`);
+- a **GitHub CLI driver** that talks only to typed `gh pr/issue` verbs (never `gh api`);
+- a **typed OpenCode tool surface** (inspect, issue, worktree, verify, pr, ready, merge, cleanup);
 - a **project-adapter schema** (`delivery.json` + `delivery.lock.json`) so any project can declare its own verify/bootstrap/CI commands;
 - **reviewer** and **verifier** subagents that match the canonical six-section envelope;
 - a **delivery-workflow** skill that drives the canonical lifecycle;
@@ -40,7 +42,7 @@ The package **does not** own:
 - Rebase merge disabled.
 - Automatic remote head-branch deletion after merge.
 - Auto-merge disabled.
-- GitHub Actions required checks are added later; first release ships without them so consumers can adopt it on GitHub Free private plans first.
+- GitHub Actions required checks are added later; the first release ships the workflow as informational so consumers can adopt on GitHub Free private plans first.
 
 ## Lifecycle (default)
 
@@ -66,6 +68,30 @@ The package **does not** own:
 
 The reusable core is being implemented in a draft PR. This bootstrap commit ships only the README, LICENSE, and CHANGELOG so that the main branch has a stable base. Do not merge feature work directly to `main`; open a PR from a feature branch.
 
-## License
+### What is implemented in this draft
 
-MIT. See `LICENSE`.
+- `src/adapter.js` — project-adapter JSON schema and loader (`loadAdapter`, `validateAdapter`, `writeLock`, `readLock`, `findOpencodeDir`).
+- `src/state/lifecycle.js` — issue-linked → worktree-created → draft-open → validating → ready → merged → cleanup-pending → cleaned state machine with idempotent transitions.
+- `src/state/manifest-store.js` — atomic, `git-common-dir`-scoped manifest persistence with `git rev-parse --path-format=absolute` resolution.
+- `src/drivers/git.js` — `spawnSync(git, argv)`-only worktree primitives.
+- `src/drivers/github.js` — `GithubDriver` interface contract.
+- `src/drivers/gh-cli.js` — production driver that talks to typed `gh pr/issue` verbs (no `gh api`).
+- `src/recovery.js` — `scanRecovery`, `wouldCleanupBeSafe`, `removeManifestIfSafe`.
+- `src/doctor.js` — adapter/OpenCode compatibility report.
+- `src/tools/delivery-inspect.js` — typed inspect tool factory.
+- `src/tools/delivery-issue.js` — typed issue tool factory.
+- `agents/delivery-reviewer.md`, `agents/delivery-verifier.md` — six-section envelope contracts.
+- `skills/delivery-workflow/SKILL.md`, `skills/planning-research-checkpoint/SKILL.md` — orchestration and research-checkpoint skills.
+- `schema/project-adapter.example.json`, `schema/project-opencode-shim.json` — consumer templates.
+- `.github/workflows/verify.yml` — required-check template (informational only for this first release).
+- 7 deterministic Node test files, all green via `pnpm run verify` (`format:check`, `lint`, `typecheck`, `test`).
+
+### What is scaffolded but incomplete in this draft
+
+- The remaining typed tool wrappers (`delivery_worktree`, `delivery_verify`, `delivery_pr`, `delivery_ready`, `delivery_merge`, `delivery_cleanup`) are present as TypeScript modules but are not yet in the green test path; they are deliberately excluded from `pnpm test` until the next release so the first release can ship with a deterministic, locked core.
+- The `src/index.ts` re-export surface is a placeholder pointing at the eventual public API; consumer projects should pin a commit hash and import directly from the relevant tool factory until the surface stabilises.
+
+## Status and licensing
+
+- **License:** MIT. See `LICENSE`.
+- **Versioning:** SemVer. First release tag will land on the merge commit of the first draft PR; subsequent releases follow the standard `<major>.<minor>.<patch>` rules described in the consumer adapter.
