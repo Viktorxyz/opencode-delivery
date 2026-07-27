@@ -5,12 +5,18 @@ import { existsSync } from "node:fs";
 
 const testFiles = [
   "tests/state/lifecycle.test.mjs",
+  "tests/state/gates.test.mjs",
   "tests/state/manifest-store.test.mjs",
   "tests/drivers/git.test.mjs",
-  "tests/drivers/github.test.mjs",
+  "tests/drivers/github-driver.test.mjs",
   "tests/recovery.test.mjs",
   "tests/doctor.test.mjs",
   "tests/adapter.test.mjs",
+  "tests/tools/inspect-issue.test.mjs",
+  "tests/tools/worktree.test.mjs",
+  "tests/tools/verify.test.mjs",
+  "tests/tools/ready-merge.test.mjs",
+  "tests/tools/review-cleanup.test.mjs",
 ];
 
 const tsxBin = existsSync("node_modules/.bin/tsx") ? "node_modules/.bin/tsx" : "tsx";

@@ -11,6 +11,7 @@
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 
 export const WorktreeRecord = {
   path: "",
@@ -78,8 +79,7 @@ export function isRebaseInProgress(cwd) {
 
 function safeExists(p) {
   try {
-    const fs = require("node:fs");
-    return fs.existsSync(p);
+    return existsSync(p);
   } catch {
     return false;
   }
@@ -103,7 +103,18 @@ export function fetchBranch(remote, branch, cwd) {
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };
 }
 
+export function remoteExists(remote, cwd) {
+  const r = runGit(["remote", "get-url", remote], cwd);
+  return r.status === 0;
+}
+
 export function createWorktree(opts) {
+  const args = ["worktree", "add", "-b", opts.branch, opts.worktreePath, opts.base];
+  const r = runGit(args, opts.cwd);
+  return { status: r.status ?? -1, stderr: r.stderr ?? "" };
+}
+
+export function createWorktreeFromLocal(opts) {
   const args = ["worktree", "add", "-b", opts.branch, opts.worktreePath, opts.base];
   const r = runGit(args, opts.cwd);
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };

@@ -8,8 +8,9 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "skipLibCheck": true,
+    "checkJs": false,
     "strict": false,
     "lib": ["ES2022"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.js", "src/**/*.d.ts", "tests/**/*.mjs"]
 }

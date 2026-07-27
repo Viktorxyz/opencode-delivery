@@ -15,7 +15,7 @@ import { transition } from "./state/lifecycle.js";
 export async function scanRecovery(repoRoot) {
   const manifests = await listManifests(repoRoot);
   const report = {
-    total,
+    total: manifests.length,
     pendingCleanup: 0,
     orphanWorktrees: 0,
     cleaned: 0,
@@ -23,6 +23,7 @@ export async function scanRecovery(repoRoot) {
   };
   for (const m of manifests) {
     if (m.state === "cleanup-pending") report.pendingCleanup += 1;
+    if (m.state === "cleaned") report.cleaned += 1;
   }
   for (const wt of git.listWorktrees(repoRoot)) {
     const note = `worktree ${wt.path} branch=${wt.branch} head=${wt.head}`;
@@ -43,12 +44,12 @@ export async function removeManifestIfSafe(repoRoot, taskId) {
 }
 
 export function wouldCleanupBeSafe(args) {
-  return (
+  return Boolean(
     args.prMerged &&
-    args.worktreeClean &&
-    !args.rebaseInProgress &&
-    args.headMatchesPr &&
-    args.baseMatches
+      args.worktreeClean &&
+      !args.rebaseInProgress &&
+      args.headMatchesPr &&
+      args.baseMatches,
   );
 }
 
