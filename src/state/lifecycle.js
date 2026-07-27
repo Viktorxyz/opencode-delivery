@@ -4,6 +4,23 @@
  * State transitions are explicit, idempotent, and recoverable after a
  * crash. Each transition records a monotonic counter so that the
  * manifest can be replayed deterministically.
+ *
+ * The transition table:
+ *
+ *   issue-linked      -> worktree-created, failed, aborted
+ *   worktree-created  -> draft-open, validating, failed, aborted
+ *   draft-open        -> validating, failed, aborted
+ *   validating        -> ready, draft-open, failed, aborted
+ *   ready             -> merged, validating, failed, aborted
+ *   merged            -> cleanup-pending, failed, aborted
+ *   cleanup-pending   -> cleaned, failed, aborted
+ *   cleaned           -> (terminal)
+ *   failed            -> aborted
+ *   aborted           -> (terminal)
+ *
+ * Idempotent self-transitions are allowed and recorded as a no-op
+ * entry in the transition log so callers that re-enter a tool don't
+ * have to special-case the "already here" state.
  */
 
 export const STATES = [
@@ -19,21 +36,26 @@ export const STATES = [
   "aborted",
 ];
 
+const TERMINAL = new Set(["cleaned", "aborted"]);
+
 const NEXT = {
-  "issue-linked": ["worktree-created", "aborted", "failed"],
-  "worktree-created": ["draft-open", "validating", "aborted", "failed"],
-  "draft-open": ["validating", "aborted", "failed"],
-  "validating": ["ready", "draft-open", "aborted", "failed"],
-  "ready": ["merged", "validating", "failed"],
-  "merged": ["cleanup-pending"],
-  "cleanup-pending": ["cleaned", "failed"],
-  "cleaned": [],
-  "failed": ["aborted"],
-  "aborted": [],
+  "issue-linked": ["issue-linked", "worktree-created", "aborted", "failed"],
+  "worktree-created": ["worktree-created", "draft-open", "validating", "aborted", "failed"],
+  "draft-open": ["draft-open", "validating", "aborted", "failed"],
+  "validating": ["validating", "ready", "draft-open", "aborted", "failed"],
+  "ready": ["ready", "merged", "validating", "aborted", "failed"],
+  "merged": ["merged", "cleanup-pending", "aborted", "failed"],
+  "cleanup-pending": ["cleanup-pending", "cleaned", "aborted", "failed"],
+  "cleaned": ["cleaned"],
+  "failed": ["failed", "aborted"],
+  "aborted": ["aborted"],
 };
 
 export function transition(m, to, opts) {
   opts = opts ?? {};
+  if (!m || typeof m !== "object") {
+    return { ok: false, from: undefined, attempted: to, reason: "manifest is missing" };
+  }
   if (!STATES.includes(m.state)) {
     return { ok: false, from: m.state, attempted: to, reason: `manifest state ${m.state} is not recognised` };
   }
@@ -67,14 +89,14 @@ export function createManifest(input) {
     taskId: input.taskId,
     repoIdentity: input.repoIdentity,
     issueNumber: input.issueNumber,
-    prNumber: input.prNumber,
+    prNumber: input.prNumber ?? null,
     baseBranch: input.baseBranch,
     baseSha: input.baseSha,
     branch: input.branch,
     worktreePath: input.worktreePath ?? null,
-    lastPrHeadSha: input.lastPrHeadSha,
-    lastReviewerSha: input.lastReviewerSha,
-    lastVerifierSha: input.lastVerifierSha,
+    lastPrHeadSha: input.lastPrHeadSha ?? null,
+    lastReviewerSha: input.lastReviewerSha ?? null,
+    lastVerifierSha: input.lastVerifierSha ?? null,
     owner: input.owner,
     state: "issue-linked",
     transitionLog: [],
@@ -84,11 +106,11 @@ export function createManifest(input) {
 }
 
 export function canTransition(from, to) {
-  return NEXT[from].includes(to);
+  return NEXT[from]?.includes(to) === true;
 }
 
 export function isTerminal(s) {
-  return s === "cleaned" || s === "aborted";
+  return TERMINAL.has(s);
 }
 
 export function mustRerunReview(previousSha, currentSha) {

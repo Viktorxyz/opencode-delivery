@@ -1,6 +1,6 @@
 {
   "name": "opencode-delivery",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Tech-stack-neutral OpenCode delivery package: lifecycle state machine, typed tools, reviewer/verifier, project-adapter contract.",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "node": ">=22.6.0"
   },
   "main": "src/index.js",
-  "types": "src/index.js",
+  "types": "src/types.d.ts",
   "files": [
     "src",
     "README.md",
@@ -22,7 +22,7 @@
   "scripts": {
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/state/lifecycle.test.mjs tests/state/manifest-store.test.mjs tests/drivers/git.test.mjs tests/drivers/github.test.mjs tests/recovery.test.mjs tests/doctor.test.mjs tests/adapter.test.mjs",
+    "test": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/state/lifecycle.test.mjs tests/state/gates.test.mjs tests/state/manifest-store.test.mjs tests/drivers/git.test.mjs tests/drivers/github-driver.test.mjs tests/recovery.test.mjs tests/doctor.test.mjs tests/adapter.test.mjs tests/tools/inspect-issue.test.mjs tests/tools/worktree.test.mjs tests/tools/verify.test.mjs tests/tools/ready-merge.test.mjs tests/tools/review-cleanup.test.mjs",
     "format:check": "node scripts/format-check.mjs",
     "verify": "node scripts/verify.mjs"
   },

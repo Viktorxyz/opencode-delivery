@@ -2,9 +2,11 @@
  * delivery_cleanup tool.
  *
  * Removes the agent-owned local worktree once the PR is confirmed
- * merged, the worktree is clean, and the head matches the PR. Refuses
- * to operate on dirty worktrees, foreign worktrees, or worktrees
- * whose PR is not merged.
+ * merged, the worktree is clean, the head matches the merged PR, the
+ * base branch matches the manifest's, and there are no unpublished
+ * commits. Refuses dirty worktrees, rebases, base mismatches, and
+ * unmerged PRs. Uses `git branch -d` (not `-D`) so a branch with
+ * unmerged commits survives cleanup.
  */
 
 import { resolve } from "node:path";
@@ -12,7 +14,6 @@ import { spawnSync } from "node:child_process";
 import * as git from "../drivers/git.js";
 import { transition } from "../state/lifecycle.js";
 import { readManifest, writeManifest, deleteManifest } from "../state/manifest-store.js";
-import { wouldCleanupBeSafe } from "../recovery.js";
 
 function safeRemoveWorktree(repoRoot, path) {
   const r = spawnSync("git", ["worktree", "remove", path], {
@@ -25,7 +26,9 @@ function safeRemoveWorktree(repoRoot, path) {
 }
 
 function safeDeleteBranch(repoRoot, branch) {
-  const r = spawnSync("git", ["branch", "-D", branch], {
+  // `git branch -d` only succeeds when the branch is fully merged; that
+  // is the exact safety property we want. Never use `-D` here.
+  const r = spawnSync("git", ["branch", "-d", branch], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -34,10 +37,21 @@ function safeDeleteBranch(repoRoot, branch) {
   return { status: r.status ?? -1, stderr: r.stderr ?? "" };
 }
 
+function aheadCount(repoRoot, branch, remote) {
+  const r = spawnSync(
+    "git",
+    ["rev-list", "--count", `${remote}/${branch}..${branch}`],
+    { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: process.env },
+  );
+  if (r.status !== 0) return null;
+  const n = parseInt(r.stdout.trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function createCleanupTool(deps) {
   return async function cleanup(input) {
     const m = await readManifest(deps.repoRoot, input.taskId);
-    if (!m) return { kind: "missing-manifest" };
+    if (!m) return { kind: "missing-manifest", taskId: input.taskId };
     if (m.state !== "merged" && m.state !== "cleanup-pending") {
       return { kind: "manifest-state", state: m.state };
     }
@@ -45,40 +59,81 @@ export function createCleanupTool(deps) {
     const wtPath = resolve(m.worktreePath);
     const mainCwd = resolve(deps.repoRoot);
     if (wtPath === mainCwd) return { kind: "current-checkout", worktreePath: wtPath };
-
     if (!git.isWorktreeClean(wtPath)) return { kind: "dirty-worktree" };
     if (git.isRebaseInProgress(wtPath)) return { kind: "rebase-in-progress" };
     if (m.prNumber === null) return { kind: "missing-pr" };
+
     const head = git.currentHead(wtPath);
     if (!head || (m.lastPrHeadSha && head !== m.lastPrHeadSha)) {
-      return { kind: "head-mismatch", headSha: head ?? "", manifestSha: m.lastPrHeadSha ?? "" };
+      return {
+        kind: "head-mismatch",
+        headSha: head ?? "",
+        manifestSha: m.lastPrHeadSha ?? "",
+      };
     }
 
-    if (m.state !== "merged") return { kind: "manifest-state", state: m.state };
-    if (!wouldCleanupBeSafe({
-      prMerged: true,
-      worktreeClean: true,
-      rebaseInProgress: false,
-      headMatchesPr: true,
-      baseMatches: true,
-    })) {
-      return { kind: "manifest-state", state: m.state };
+    const pr = await deps.driver.readPullRequest({
+      repo: deps.repoSlug,
+      number: m.prNumber,
+    });
+    if (!pr.merged) {
+      return {
+        kind: "unmerged",
+        headSha: pr.headSha,
+        manifestSha: m.lastPrHeadSha ?? "",
+      };
+    }
+    if (pr.baseRefName !== m.baseBranch) {
+      return { kind: "base-mismatch", manifestBase: m.baseBranch, prBase: pr.baseRefName };
+    }
+
+    const remote = deps.remote ?? "origin";
+    const ahead = aheadCount(wtPath, m.branch, remote);
+    if (ahead === null || ahead > 0) {
+      return {
+        kind: "has-unpublished-commits",
+        ahead: ahead ?? -1,
+        branch: m.branch,
+        remote,
+      };
     }
 
     const removed = safeRemoveWorktree(deps.repoRoot, wtPath);
-    if (removed.status !== 0) return { kind: "remove-failed", stderr: removed.stderr };
-    safeDeleteBranch(deps.repoRoot, m.branch);
-
-    const next = { ...m };
-    const t = transition(next, "cleaned", { reason: "worktree removed" });
-    if (t.ok && t.to === "cleaned") {
-      const t2 = transition({ ...next, state: t.to, transitionLog: [...next.transitionLog, { from: t.from, to: t.to, at: t.at, reason: t.reason }], updatedAt: new Date().toISOString() }, "cleaned", { reason: "manifest sealed" });
-      if (t2.ok) {
-        await writeManifest(deps.repoRoot, { ...next, state: t2.to, transitionLog: [...next.transitionLog, { from: t2.from, to: t2.to, at: t2.at, reason: t2.reason }], updatedAt: new Date().toISOString() });
-      }
-      await deleteManifest(deps.repoRoot, input.taskId);
-      return { contractVersion: 1, manifestPath: null, removedPath: wtPath };
+    if (removed.status !== 0) {
+      return { kind: "remove-failed", stderr: removed.stderr };
     }
-    return { kind: "manifest-state", state: m.state };
+    const branchResult = safeDeleteBranch(deps.repoRoot, m.branch);
+    if (branchResult.status !== 0) {
+      return { kind: "branch-delete-failed", stderr: branchResult.stderr };
+    }
+
+    const tCleanup = transition(m, "cleanup-pending", { reason: "worktree removed" });
+    const candidate = tCleanup.ok
+      ? {
+          ...m,
+          state: tCleanup.to,
+          transitionLog: [
+            ...m.transitionLog,
+            { from: tCleanup.from, to: tCleanup.to, at: tCleanup.at, reason: tCleanup.reason },
+          ],
+          updatedAt: new Date().toISOString(),
+        }
+      : m;
+
+    const tCleaned = transition(candidate, "cleaned", { reason: "manifest sealed" });
+    if (tCleaned.ok) {
+      const sealed = {
+        ...candidate,
+        state: tCleaned.to,
+        transitionLog: [
+          ...candidate.transitionLog,
+          { from: tCleaned.from, to: tCleaned.to, at: tCleaned.at, reason: tCleaned.reason },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      await writeManifest(deps.repoRoot, sealed);
+      await deleteManifest(deps.repoRoot, input.taskId);
+    }
+    return { contractVersion: 1, manifestPath: null, removedPath: wtPath };
   };
 }

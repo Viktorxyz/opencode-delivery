@@ -2,7 +2,7 @@
 
 > Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
 >
-> **Status:** First release in progress. Adapter schema, lifecycle state machine, GitHub CLI driver, Git worktree driver, doctor, recovery, lifecycle/manifest-store tests are green. Adapter validation tests pass. Tool wrappers are scaffolded; the typed tool set is intentionally conservative for the first release.
+> **Status:** v0.1.1. Lifecycle, project-adapter, GitHub CLI driver, Git worktree driver, doctor, recovery, gate helper, reviewer-recording tool, and every `delivery_*` typed tool factory are green and covered by deterministic unit tests. 87/87 tests pass under `npm run verify`.
 
 ---
 
@@ -66,32 +66,40 @@ The package **does not** own:
 
 ## Status
 
-The reusable core is being implemented in a draft PR. This bootstrap commit ships only the README, LICENSE, and CHANGELOG so that the main branch has a stable base. Do not merge feature work directly to `main`; open a PR from a feature branch.
+The reusable core is operational at v0.1.1. The full lifecycle is covered by deterministic unit tests: `npm run verify` runs `format:check`, `lint`, `typecheck`, and the test suite against 16 suites across 13 test files. All four steps are green at HEAD; **87/87 tests pass** in a single deterministic run.
 
-### What is implemented in this draft
+### What is implemented in v0.1.1
 
 - `src/adapter.js` — project-adapter JSON schema and loader (`loadAdapter`, `validateAdapter`, `writeLock`, `readLock`, `findOpencodeDir`).
-- `src/state/lifecycle.js` — issue-linked → worktree-created → draft-open → validating → ready → merged → cleanup-pending → cleaned state machine with idempotent transitions.
+- `src/state/lifecycle.js` — `issue-linked → worktree-created → draft-open → validating → ready → merged → cleanup-pending → cleaned` state machine with idempotent self-transitions and `failed` / `aborted` exits.
 - `src/state/manifest-store.js` — atomic, `git-common-dir`-scoped manifest persistence with `git rev-parse --path-format=absolute` resolution.
-- `src/drivers/git.js` — `spawnSync(git, argv)`-only worktree primitives.
-- `src/drivers/github.js` — `GithubDriver` interface contract.
-- `src/drivers/gh-cli.js` — production driver that talks to typed `gh pr/issue` verbs (no `gh api`).
+- `src/drivers/git.js` — `spawnSync(git, argv)`-only worktree primitives, plus `remoteExists` / `createWorktreeFromLocal` fallbacks.
+- `src/drivers/github.js` — `parseRepoSlug` and the typed `GithubDriver` interface contract.
+- `src/drivers/gh-cli.js` — production driver backed by typed `gh pr/issue` verbs (no `gh api`). Accepts an optional `{ runner, cwd, env }` for deterministic tests. `createGhStub` factory ships a queue-based stub for tests.
 - `src/recovery.js` — `scanRecovery`, `wouldCleanupBeSafe`, `removeManifestIfSafe`.
 - `src/doctor.js` — adapter/OpenCode compatibility report.
-- `src/tools/delivery-inspect.js` — typed inspect tool factory.
-- `src/tools/delivery-issue.js` — typed issue tool factory.
+- `src/gates.js` — centralised Ready/Merge gate checking (reviewer SHA, verifier SHA, PR head SHA, required CI checks).
+- `src/tools/delivery-*.js` — all nine typed tool factories: `inspect`, `issue`, `worktree`, `verify`, `pr`, `ready`, `review`, `merge`, `cleanup`.
 - `agents/delivery-reviewer.md`, `agents/delivery-verifier.md` — six-section envelope contracts.
 - `skills/delivery-workflow/SKILL.md`, `skills/planning-research-checkpoint/SKILL.md` — orchestration and research-checkpoint skills.
 - `schema/project-adapter.example.json`, `schema/project-opencode-shim.json` — consumer templates.
-- `.github/workflows/verify.yml` — required-check template (informational only for this first release).
-- 7 deterministic Node test files, all green via `pnpm run verify` (`format:check`, `lint`, `typecheck`, `test`).
+- `.github/workflows/verify.yml` — required-check template (`delivery-verify` job).
 
-### What is scaffolded but incomplete in this draft
+### Tests
 
-- The remaining typed tool wrappers (`delivery_worktree`, `delivery_verify`, `delivery_pr`, `delivery_ready`, `delivery_merge`, `delivery_cleanup`) are present as TypeScript modules but are not yet in the green test path; they are deliberately excluded from `pnpm test` until the next release so the first release can ship with a deterministic, locked core.
-- The `src/index.ts` re-export surface is a placeholder pointing at the eventual public API; consumer projects should pin a commit hash and import directly from the relevant tool factory until the surface stabilises.
+`npm run verify` (alias of `node scripts/verify.mjs`) runs `format:check`, `lint`, `typecheck`, and the deterministic `tsx --test` suite. 13 test files cover:
+
+- Lifecycle state machine (every transition, every forbidden transition, monotonic timestamps, `fatalReason`).
+- Manifest persistence (round-trip, missing, empty list, multi-manifest, atomic write, delete).
+- Git driver (worktree listing, clean / rebase detection, worktree creation).
+- GitHub driver (slug parsing, issue search vs create, `Closes #N` injection, checks mapping, stub queue).
+- Adapter validation (every field, both happy and unhappy paths).
+- Recovery helpers (full safe shape, every unsafe signal).
+- Doctor (adapter contract version, lock match, package version).
+- Gates (`checkGates` returns the typed envelope for every failure reason, opt-out respected).
+- Every `delivery_*` tool with happy paths, missing inputs, missing manifests, wrong states, idempotency, stale heads, missing/pending/failing CI, dirty worktrees, base mismatches, missing merges, missing unpublished-commit guards.
 
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
-- **Versioning:** SemVer. First release tag will land on the merge commit of the first draft PR; subsequent releases follow the standard `<major>.<minor>.<patch>` rules described in the consumer adapter.
+- **Versioning:** SemVer. v0.1.1 ships as the first fully-tested release. Subsequent releases follow the standard `<major>.<minor>.<patch>` rules described in the consumer adapter.
