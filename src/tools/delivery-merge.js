@@ -87,6 +87,6 @@ export function createMergeTool(deps) {
       updatedAt: new Date().toISOString(),
     };
     const path = await writeManifest(deps.repoRoot, next);
-    return { contractVersion: 1, manifestPath: path, pr: m.prNumber };
+    return { kind: "merge", contractVersion: 1, manifestPath: path, pr: m.prNumber, taskId: m.taskId };
   };
 }

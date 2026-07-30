@@ -219,6 +219,8 @@ suite("delivery_merge", { concurrency: false }, () => {
       });
       const r = await tool({ taskId: "t1", subject: "fix(t1): merge" });
       assert.equal(r.contractVersion, 1, JSON.stringify(r));
+      assert.equal(r.kind, "merge", `expected kind=merge envelope, got ${JSON.stringify(r)}`);
+      assert.equal(r.taskId, "t1");
       const m = await readManifest(fixture.dir, "t1");
       assert.equal(m.state, "merged");
     } finally {
