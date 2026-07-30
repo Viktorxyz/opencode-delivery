@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 
 suite("delivery-reviewer agent contract", { concurrency: false }, () => {
   test("instructs the reviewer to call delivery_review with the head SHA on pass", { serial: true }, async () => {
-    const path = "agents/delivery-reviewer.md";
+    const path = "assets/agents/delivery-reviewer.md";
     assert.ok(existsSync(path), `${path} must exist`);
     const src = await import("node:fs").then((m) => m.readFileSync(path, "utf8"));
     assert.match(src, /delivery_review/, `delivery-reviewer.md must reference delivery_review`);

@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 
 suite("delivery-reviewer agent permission boundary", { concurrency: false }, () => {
   test("frontmatter allows only delivery_review, denies all other delivery_*", { serial: true }, async () => {
-    const path = "agents/delivery-reviewer.md";
+    const path = "assets/agents/delivery-reviewer.md";
     assert.ok(existsSync(path), `${path} must exist`);
     const src = readFileSync(path, "utf8");
     assert.match(src, /^---\n([\s\S]*?)\n---/, "frontmatter must exist");
@@ -45,7 +45,7 @@ suite("delivery-reviewer agent permission boundary", { concurrency: false }, () 
   });
 
   test("frontmatter still instructs delivery_review on pass with headSha", { serial: true }, async () => {
-    const path = "agents/delivery-reviewer.md";
+    const path = "assets/agents/delivery-reviewer.md";
     const src = readFileSync(path, "utf8");
     assert.match(src, /delivery_review/, "must reference delivery_review");
     assert.match(src, /head[Ss]ha|head_ref_oid|headRefOid/, "must reference the head SHA");
