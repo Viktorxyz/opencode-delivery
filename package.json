@@ -12,11 +12,6 @@
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.15.5 <2"
   },
-  "peerDependenciesMeta": {
-    "@opencode-ai/plugin": {
-      "optional": true
-    }
-  },
   "main": "./dist/plugin.js",
   "types": "./dist/plugin.d.ts",
   "exports": {
@@ -50,15 +45,16 @@
     "prepack": "node scripts/prepack.mjs",
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/state/lifecycle.test.mjs tests/state/gates.test.mjs tests/state/manifest-store.test.mjs tests/drivers/git.test.mjs tests/drivers/github-driver.test.mjs tests/recovery.test.mjs tests/doctor.test.mjs tests/adapter.test.mjs",
+    "test": "node scripts/run-all-tests.mjs",
     "test:all": "node scripts/run-all-tests.mjs",
-    "test:installer": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/installer/**/*.test.mjs",
-    "test:plugin": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/plugin/**/*.test.mjs",
-    "test:package": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/package/*.test.mjs",
+    "test:installer": "node --test --test-concurrency=1 --test-reporter=spec tests/installer/**/*.test.mjs",
+    "test:plugin": "node --test --test-concurrency=1 --test-reporter=spec tests/plugin/**/*.test.mjs",
+    "test:package": "node --test --test-concurrency=1 --test-reporter=spec tests/package/*.test.mjs",
     "format:check": "node scripts/format-check.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "1.18.10",
     "@types/node": "^22.10.2",
     "esbuild": "^0.25.0",
     "tsx": "^4.23.1",

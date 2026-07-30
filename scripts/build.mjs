@@ -25,7 +25,7 @@ async function bundlePlugin(pkg) {
     logLevel: "info",
     banner: { js: `// opencode-ship v${pkg.version}` },
     define: { "process.env.OPENCODE_SHIP_VERSION": JSON.stringify(pkg.version) },
-    external: ["@opencode-ai/plugin", "@opencode-ai/plugin/tool", "node:*", "bun:*"],
+    external: ["node:*", "bun:*"],
   });
 }
 
