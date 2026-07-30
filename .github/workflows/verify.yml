@@ -3,6 +3,9 @@ name: verify
 on:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -25,7 +28,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
       - name: install dependencies
         run: npm install --no-audit --no-fund
       - name: verify
         run: npm run verify
+      - name: packed-artifact smoke
+        run: npm run test:package

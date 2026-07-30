@@ -1,45 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 
-const testFiles = [
-  "tests/state/lifecycle.test.mjs",
-  "tests/state/gates.test.mjs",
-  "tests/state/manifest-store.test.mjs",
-  "tests/drivers/git.test.mjs",
-  "tests/drivers/github-driver.test.mjs",
-  "tests/drivers/read-checks-by-pr.test.mjs",
-  "tests/recovery.test.mjs",
-  "tests/doctor.test.mjs",
-  "tests/adapter.test.mjs",
-  "tests/types-value-exports.test.mjs",
-  "tests/types/success-envelope-shape.test.mjs",
-  "tests/agents/delivery-reviewer-contract.test.mjs",
-  "tests/agents/reviewer-permission-boundary.test.mjs",
-  "tests/tools/inspect-issue.test.mjs",
-  "tests/tools/issue-idempotent.test.mjs",
-  "tests/tools/ready-merge-readchecks.test.mjs",
-  "tests/tools/review-headsha-required.test.mjs",
-  "tests/tools/cleanup-recovery-no-pr.test.mjs",
-  "tests/tools/cleanup-real-squash.test.mjs",
-  "tests/tools/worktree.test.mjs",
-  "tests/tools/worktree-path-escape.test.mjs",
-  "tests/tools/bootstrap-failure-recovery.test.mjs",
-  "tests/tools/verify.test.mjs",
-  "tests/tools/verify-manifest-path.test.mjs",
-  "tests/tools/ready-merge.test.mjs",
-  "tests/tools/review-cleanup.test.mjs",
-  "tests/tools/pr-body-keeps-closing.test.mjs",
-  "tests/tools/cleanup-after-branch-delete.test.mjs",
-];
-
-const tsxBin = existsSync("node_modules/.bin/tsx") ? "node_modules/.bin/tsx" : "tsx";
 const steps = [
   ["format:check", ["node", "scripts/format-check.mjs"]],
   ["lint", ["node", "scripts/lint.mjs"]],
   ["typecheck", ["node", "scripts/typecheck.mjs"]],
-  ["test", [tsxBin, "--test", "--test-concurrency=1", "--test-reporter=spec", "--tsconfig", "tsconfig.json", ...testFiles]],
+  ["build", ["node", "scripts/build.mjs"]],
+  ["test", ["node", "scripts/run-all-tests.mjs"]],
 ];
 
 let failed = 0;
