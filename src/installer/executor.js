@@ -1,0 +1,295 @@
+/*
+ * Reconciliation executor shared by `init`, `update`, and `diff`.
+ *
+ * Produces a single ordered plan across three classes:
+ *   - user-owned config synthesis (`ship.config.json`);
+ *   - root opencode.json / .jsonc JSON pointer edits (Build
+ *     permissions only);
+ *   - managed plugin / agents / skills / ship.lock.json file ops.
+ *
+ * Outputs the structured `Plan` object, the assembled lock object,
+ * and a list of human-readable conflicts. The commit semantics are
+ * controlled by the calling command (`diff` does not commit).
+ */
+
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { CATALOG, getTemplateSet } from "./catalog.js";
+import {
+  planFileInstall,
+  planConfigSynthesis,
+  planRootConfigApply,
+  planUninstall,
+} from "./planner.js";
+import { readLock, writeLock } from "./lock.js";
+import { loadConfig, writeConfig, renderDefaultConfig } from "./config.js";
+import { bytesHashString } from "./hash.js";
+import { stableStringify } from "./json-pointer.js";
+import { detectProject } from "./detection/project.js";
+import { readRootConfig } from "./root-config.js";
+import { lockPath } from "./lock.js";
+import { executePlan } from "./transaction.js";
+import { migration } from "./migration.js";
+
+async function readCurrentBytes(targetPath) {
+  if (!existsSync(targetPath)) return null;
+  const buf = await readFile(targetPath);
+  return { bytes: buf, hash: bytesHashString(buf.toString("utf8")) };
+}
+
+async function gatherAllTargets(repoRoot) {
+  const out = [];
+  for (const entry of CATALOG) {
+    out.push({ target: resolve(repoRoot, entry.path) });
+  }
+  out.push({ target: resolve(repoRoot, ".opencode/ship.lock.json") });
+  out.push({ target: resolve(repoRoot, ".opencode/ship.config.json") });
+  return out;
+}
+
+export async function previewInstall({ rootPath, replaceManaged, forceConfig, forceRootConfig }) {
+  const detection = detectProject(rootPath ?? process.cwd());
+  if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
+    return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
+  }
+  const repoRoot = detection.repoRoot;
+  const lock = await readLock(repoRoot);
+  const migrationReport = await migration({ repoRoot, lock, forceRepair: false });
+
+  const configPlan = await planConfigSynthesis({
+    repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
+  });
+  const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged) });
+  const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig) });
+
+  const plan = [...(filePlan ?? []), configPlan, rootPlan];
+  const conflicts = plan.filter((p) => p && p.kind === "conflict");
+  const summary = summarise(plan);
+  return { ok: true, repoRoot, detection, lock, plan, conflicts, summary, migrationReport };
+}
+
+export async function previewUninstall({ rootPath }) {
+  const detection = detectProject(rootPath ?? process.cwd());
+  if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
+    return { ok: false, error: { kind: "invalid-project" } };
+  }
+  const repoRoot = detection.repoRoot;
+  const lock = await readLock(repoRoot);
+  if (!lock) {
+    return { ok: true, repoRoot, lock, plan: [], conflicts: [], summary: summarise([]) };
+  }
+  const plan = await planUninstall({ repoRoot, lock });
+  const conflicts = plan.filter((p) => p.kind === "conflict");
+  return { ok: true, repoRoot, lock, plan, conflicts, summary: summarise(plan) };
+}
+
+function summarise(plan) {
+  const counts = { create: 0, update: 0, noop: 0, delete: 0, conflict: 0, converge: 0, lock: 0, config: 0, rootConfig: 0 };
+  for (const op of plan) {
+    if (!op) continue;
+    if (op.op === "lock") counts.lock += 1;
+    else if (op.op === "config") counts.config += 1;
+    else if (op.op === "root-config") counts.rootConfig += 1;
+    else if (counts[op.kind] !== undefined) counts[op.kind] += 1;
+  }
+  return counts;
+}
+
+async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
+  const files = [];
+  const remain = lock?.files?.filter((f) => !plan.some((op) => op?.relPath === f.path)) ?? [];
+
+  for (const op of plan) {
+    if (!op || op.op !== "file") continue;
+    if (op.kind === "delete" || op.kind === "conflict") continue;
+    const entry = CATALOG.find((c) => c.path === op.relPath);
+    if (!entry) continue;
+    let hash = op.sha256;
+    if (!hash && op.target) {
+      const cur = await readCurrentBytes(op.target);
+      if (cur) hash = cur.hash;
+    }
+    files.push({
+      path: op.relPath,
+      sha256: hash ?? null,
+      mode: 0o644,
+      template: entry.source,
+      kind: entry.kind,
+    });
+  }
+  for (const f of remain) {
+    files.push({ ...f });
+  }
+
+  const configSha = configPlan?.kind === "create" || configPlan?.kind === "update"
+    ? configPlan.desiredSha
+    : configPlan?.kind === "noop" ? configPlan.currentSha : null;
+  const rootPointers = rootPlan?.pointerRecords ?? lock?.manager?.rootDocuments?.[0]?.pointers ?? [];
+
+  return {
+    contractVersion: 1,
+    manager: {
+      schemaVersion: 1,
+      name: "opencode-ship",
+      version: process.env.OPENCODE_SHIP_VERSION ?? "0.2.0",
+      templateSet: getTemplateSet(),
+      appliedAt: new Date().toISOString(),
+      config: {
+        path: ".opencode/ship.config.json",
+        sha256: configSha ?? lock?.manager?.config?.sha256 ?? "",
+        existed: Boolean(lock?.manager?.config?.existed),
+      },
+      rootDocuments: rootPlan?.kind && rootPlan.kind !== "noop" && rootPlan?.target ? [{
+        path: rootPlan.relPath,
+        format: rootPlan.format ?? "json",
+        pointers: rootPointers,
+      }] : (lock?.manager?.rootDocuments ?? []),
+    },
+    files,
+    cleanupPending: lock?.cleanupPending ?? [],
+  };
+}
+
+export async function commitInstall(preview, { json, command }) {
+  if (!preview.ok) {
+    return exitWith(2, preview.error?.kind ?? "invalid-project", json, command);
+  }
+  const { repoRoot, plan, conflicts, migrationReport } = preview;
+  const filePlans = plan.filter((op) => op.op === "file");
+  const configPlan = plan.find((op) => op.op === "config");
+  const rootPlan = plan.find((op) => op.op === "root-config");
+  const fileOnly = filePlans;
+  if (conflicts.length > 0) {
+    return emit(command, plan, conflicts, {
+      summary: summarise(plan),
+      json, exitCode: 3,
+      diagnostics: ["hash conflict; refuse to overwrite"],
+      extra: { repoRoot, migrationReport },
+    });
+  }
+
+  const newLockObject = await assembleLock({
+    repoRoot,
+    plan: fileOnly,
+    lock: preview.lock,
+    configPlan,
+    rootPlan,
+  });
+
+  const txPlan = await stageFiles(fileOnly, repoRoot);
+  if (configPlan && (configPlan.kind === "create" || configPlan.kind === "update")) {
+    /** @type {any} */ (configPlan).op = "file";
+    txPlan.push({
+      op: "file",
+      kind: configPlan.kind === "create" ? "create" : "update",
+      target: configPlan.target,
+      bytes: configPlan.bytes,
+      mode: 0o644,
+      relPath: configPlan.relPath,
+    });
+  }
+  if (rootPlan && (rootPlan.kind === "create" || rootPlan.kind === "update")) {
+    txPlan.push({
+      op: "file",
+      kind: rootPlan.kind,
+      target: rootPlan.target,
+      bytes: rootPlan.bytes,
+      mode: 0o644,
+      relPath: rootPlan.relPath,
+    });
+  }
+
+  const tx = await executePlan({
+    repoRoot,
+    plan: txPlan,
+    newLockBuilder: async () => newLockObject,
+  });
+  if (!tx.ok) {
+    return exitWith(4, tx.error?.message ?? "transaction failure", json, command);
+  }
+  return emit(command, plan, [], {
+    summary: summarise(plan),
+    json, exitCode: 0,
+    diagnostics: [],
+    extra: { repoRoot, migrationReport, recovered: tx.recovered },
+  });
+}
+
+async function stageFiles(filePlan, repoRoot) {
+  /** @type {Array<{op:string;kind:string;target:string;bytes?:Buffer;mode?:number;relPath?:string}>} */
+  const out = [];
+  for (const op of filePlan) {
+    if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge" || op.kind === "delete") continue;
+    out.push({
+      op: "file",
+      kind: op.kind,
+      target: op.target,
+      bytes: op.bytes ?? Buffer.alloc(0),
+      mode: op.mode ?? 0o644,
+    });
+  }
+  return out;
+}
+
+function serializePlan(plan) {
+  return plan.filter(Boolean).map((op) => {
+    if (!op) return null;
+    const { bytes, ...rest } = op;
+    if (bytes && Buffer.isBuffer(bytes)) {
+      return { ...rest, bytesLength: bytes.length };
+    }
+    return rest;
+  });
+}
+
+function emit(command, plan, conflicts, { summary, json, exitCode, diagnostics, extra }) {
+  if (json) {
+    const safePlan = serializePlan(plan);
+    const safeConflicts = serializePlan(conflicts);
+    process.stdout.write(JSON.stringify({
+      reportVersion: 1,
+      command,
+      status: conflicts.length > 0 ? "conflict" : exitCode === 0 ? "ok" : "error",
+      plan: safePlan,
+      conflicts: safeConflicts,
+      summary,
+      diagnostics,
+      exitCode,
+      ...(extra ?? {}),
+    }, null, 2) + "\n");
+  } else {
+    const head = `# opencode-ship ${command}`;
+    const lines = [head, "", "## Plan"];
+    for (const op of plan.filter(Boolean)) {
+      const bytesHint = op.bytes ? `${(op.bytes.length ?? 0)}b` : "";
+      lines.push(`  - ${op.kind.padEnd(9)} ${op.op} ${op.relPath ?? op.target}${bytesHint ? ` (${bytesHint})` : ""}${op.reason ? ` — ${op.reason}` : ""}`);
+    }
+    if (conflicts.length) {
+      lines.push("", `## Conflicts (${conflicts.length})`);
+      for (const c of conflicts) lines.push(`  - ${c.relPath ?? c.target}: ${c.reason}`);
+    }
+    if (diagnostics?.length) {
+      lines.push("", "## Diagnostics");
+      for (const d of diagnostics) lines.push(`  - ${d}`);
+    }
+    lines.push("", `Summary: ${JSON.stringify(summary)}`);
+    process.stdout.write(lines.join("\n") + "\n");
+  }
+  process.exitCode = exitCode;
+  return { ok: true, exitCode, extra };
+}
+
+function exitWith(code, message, json, command) {
+  if (json) {
+    process.stdout.write(JSON.stringify({
+      reportVersion: 1, command, status: "error",
+      plan: [], conflicts: [], summary: summarise([]),
+      diagnostics: [message], exitCode: code,
+    }, null, 2) + "\n");
+  } else {
+    process.stdout.write(`opencode-ship: ${message}\n`);
+  }
+  process.exitCode = code;
+  return { ok: false, exitCode: code };
+}

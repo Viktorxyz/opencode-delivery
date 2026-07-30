@@ -1,22 +1,21 @@
 /*
- * Install-manifest persistence.
+ * Install manifest persistence.
  *
- * Locks live at .opencode/ship.lock.json. This module handles
- * read, write, schema validation, and v0.1.x -> v0.2.x migration.
+ * Locks live at `.opencode/ship.lock.json`. This module handles
+ * read, write, integrity computation, and migration from the v0.1.x
+ * legacy lock (`.opencode/delivery.lock.json`) into a v0.2
+ * manager-aware lock.
  *
- * For migrated consumers, the legacy `.opencode/delivery.lock.json`
- * fields `contractVersion`, `adapterSha256`, and `writtenAt` are
- * preserved alongside the new `manager` block so legacy doctor
- * checks remain happy. New consumers do not get them.
- *
- * The lock digest is computed over its own contents *minus* the
- * `integrity.lockSha256` field to avoid self-reference.
+ * `integrity.lockSha256` is computed over the lock contents minus
+ * the `integrity` field itself, so consumers and installers can
+ * detect tampering.
  */
 
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { bytesHashString } from "./hash.js";
+import { stableStringify } from "./json-pointer.js";
 
 export const CURRENT_LOCK_SCHEMA = 1;
 
@@ -29,7 +28,8 @@ export async function readLock(repoRoot) {
   if (!existsSync(path)) return null;
   try {
     const raw = await readFile(path, "utf8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed;
   } catch {
     return null;
   }
@@ -38,20 +38,27 @@ export async function readLock(repoRoot) {
 export async function writeLock(repoRoot, lock) {
   const path = lockPath(repoRoot);
   await mkdir(dirname(path), { recursive: true });
-  const { integrity, ...rest } = lock;
-  void integrity;
-  const finalLock = {
-    ...rest,
-    integrity: {
-      lockSha256: bytesHashString(
-        JSON.stringify({ ...rest, integrity: { lockSha256: "" } }),
-      ),
-    },
-  };
+  const integrity = computeIntegrity(lock);
+  const finalLock = { ...lock, integrity };
+  const raw = JSON.stringify(finalLock, null, 2) + "\n";
   const tmp = `${path}.tmp`;
-  await writeFile(tmp, JSON.stringify(finalLock, null, 2) + "\n", "utf8");
+  await writeFile(tmp, raw, "utf8");
   await rename(tmp, path);
   return path;
+}
+
+export function computeIntegrity(lock) {
+  const { integrity: _ignored, ...without } = lock ?? {};
+  void _ignored;
+  return {
+    lockSha256: bytesHashString(stableStringify(without)),
+  };
+}
+
+export async function validateIntegrity(lock) {
+  if (!lock?.integrity?.lockSha256) return false;
+  const expected = computeIntegrity(lock).lockSha256;
+  return expected === lock.integrity.lockSha256;
 }
 
 export async function migrateLegacyLock(repoRoot) {
@@ -64,7 +71,8 @@ export async function migrateLegacyLock(repoRoot) {
     return {
       kind: "legacy-lock",
       sourcePath: legacy,
-      payload: parsed,
+      payload: { contractVersion: 1, adapterSha256: parsed.adapterSha256, writtenAt: parsed.writtenAt ?? null },
+      sha256: bytesHashString(raw),
     };
   } catch {
     return null;

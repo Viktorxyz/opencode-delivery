@@ -59,30 +59,26 @@ export async function writeConfig(repoRoot, value) {
 }
 
 export function renderDefaultConfig(detection, overrides = {}) {
-  const pm = detection.packageManager ?? "npm";
-  const safeBootstrap = detection.worktreeBootstrap?.length
+  const pm = detection?.packageManager ?? "npm";
+  const safeBootstrap = Array.isArray(detection?.worktreeBootstrap) && detection.worktreeBootstrap.length
     ? detection.worktreeBootstrap
     : [["npm", "install"]];
-  const safeVerification = detection.verificationPlan?.length
-    ? detection.verificationPlan.map((step) => ({
-        id: step.id,
-        argv: step.argv,
-        ...(step.script ? { inferredFrom: step.script } : {}),
-      }))
-    : [{ id: "typecheck", argv: ["npm", "run", "typecheck"], inferredFrom: "typecheck" }];
-  const repo = detection.repository ?? overrides.repository ?? "owner/repo";
-  const baseConfig = {
+  const safeVerification = Array.isArray(detection?.verificationPlan) && detection.verificationPlan.length
+    ? detection.verificationPlan.map((step) => ({ id: step.id, argv: step.argv }))
+    : [{ id: "typecheck", argv: ["npm", "run", "typecheck"] }];
+  const repo = detection?.repository ?? overrides.repository ?? "owner/repo";
+  return {
     schemaVersion: 1,
     project: {
-      remote: detection.remote ?? "origin",
+      remote: detection?.remote ?? "origin",
       repository: repo,
-      defaultBranch: detection.defaultBranch ?? "main",
+      defaultBranch: detection?.defaultBranch ?? "main",
       packageManager: pm,
       detectOverrides: false,
     },
     delivery: {
       worktree: {
-        root: detection.worktreeRoot ?? ".worktrees",
+        root: detection?.worktreeRoot ?? ".worktrees",
         branchTemplate: "{actor}/{slug}",
         bootstrap: safeBootstrap,
       },
@@ -103,5 +99,4 @@ export function renderDefaultConfig(detection, overrides = {}) {
       cleanup: { when: "next-task", requireUnpublishedGuard: true },
     },
   };
-  return baseConfig;
 }

@@ -2,9 +2,7 @@
  * opencode-ship CLI entry point.
  *
  * Parses argv with the dependency-free parser, dispatches to the
- * command modules, and emits a stable exit code. We never use
- * `process.exit` until the command has finished writing its human or
- * JSON envelope so wrapper scripts can capture the output.
+ * command modules, and emits a stable exit code via process.exitCode.
  */
 
 import { parseCommand, helpText } from "./installer/cli-args.js";
@@ -20,43 +18,45 @@ async function main() {
   const parsed = parseCommand(process.argv.slice(2));
   if (parsed.command === "help") {
     process.stdout.write(helpText() + "\n");
-    process.exit(0);
+    process.exitCode = 0;
     return;
   }
   if (parsed.command === "version") {
     process.stdout.write(`opencode-ship ${VERSION}\n`);
-    process.exit(0);
+    process.exitCode = 0;
     return;
   }
   if ("error" in parsed) {
     process.stdout.write(`opencode-ship: ${parsed.error}\n\n${helpText()}`);
-    process.exit(2);
+    process.exitCode = 2;
     return;
   }
+  const options = parsed.options ?? {};
+  /** @type {any} */ const opts = options;
   switch (parsed.command) {
     case "init":
-      await runInit(parsed.options);
+      await runInit({ json: !!opts.json, rootPath: opts.rootPath, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig });
       return;
     case "diff":
-      await runDiff(parsed.options);
+      await runDiff({ json: !!opts.json, rootPath: opts.rootPath });
       return;
     case "update":
-      await runUpdate(parsed.options);
+      await runUpdate({ json: !!opts.json, rootPath: opts.rootPath, replaceManaged: !!opts.replaceManaged, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig });
       return;
     case "doctor":
-      await runDoctor(parsed.options);
+      await runDoctor({ json: !!opts.json, rootPath: opts.rootPath });
       return;
     case "uninstall":
-      await runUninstall(parsed.options);
+      await runUninstall({ json: !!opts.json, rootPath: opts.rootPath, purgeConfig: !!opts.purgeConfig });
       return;
     default:
       process.stdout.write(helpText() + "\n");
-      process.exit(2);
+      process.exitCode = 2;
   }
 }
 
 main().catch((e) => {
   process.stderr.write(`opencode-ship: internal failure: ${e?.message ?? String(e)}\n`);
   if (e?.stack) process.stderr.write(e.stack + "\n");
-  process.exit(4);
+  process.exitCode = 4;
 });

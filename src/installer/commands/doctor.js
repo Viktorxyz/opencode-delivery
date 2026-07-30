@@ -5,7 +5,7 @@
  * check is independent; the report includes every check so callers
  * can see drift, conflicts, and missing pieces at once.
  *
- * Exit code:
+ * Exit codes:
  *   0  healthy
  *   1  unhealthy but no conflicts (warnings about drift)
  *   2  invalid project (no Git root, etc.)
@@ -13,13 +13,12 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { readLock } from "../lock.js";
+import { readLock, validateIntegrity } from "../lock.js";
 import { loadConfig } from "../config.js";
-import { CATALOG } from "../catalog.js";
 import { detectProject } from "../detection/project.js";
 import { resolve } from "node:path";
 import { bytesHashString } from "../hash.js";
-import { applyOwnedPointers } from "../root-config.js";
+import { readRootConfig, applyOwnedPointers } from "../root-config.js";
 import { renderHuman, renderJson, summarise } from "../report.js";
 
 function checkNode() {
@@ -37,32 +36,44 @@ function checkGh() {
 }
 
 function checkGhAuth() {
+  const envToken = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (!envToken) {
+    return { name: "gh auth status", ok: false, detail: "no GH_TOKEN / GITHUB_TOKEN in environment; gh auth skipped" };
+  }
   const r = spawnSync("gh", ["auth", "status"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  return { name: "gh auth status", ok: r.status === 0, detail: r.status === 0 ? r.stdout.trim() : (r.stderr || r.stdout || "").trim() };
+  return {
+    name: "gh auth status",
+    ok: r.status === 0,
+    detail: r.status === 0 ? "authenticated (token)" : ((r.stderr || r.stdout || "").trim() || "no session"),
+  };
 }
 
-function checkLock(repoRoot) {
-  return readLock(repoRoot).then((lock) => ({
+async function checkLock(repoRoot) {
+  const lock = await readLock(repoRoot);
+  if (!lock) return { name: "lock present", ok: false, detail: "missing" };
+  const integrityOk = await validateIntegrity(lock);
+  return {
     name: "lock present",
-    ok: Boolean(lock),
-    detail: lock ? `v0.2 manager@${lock.manager?.version ?? "?"}` : "missing",
-  }));
+    ok: integrityOk,
+    detail: integrityOk ? `v0.2 manager@${lock.manager?.version ?? "?"}` : "integrity mismatch",
+  };
 }
 
-function checkConfig(repoRoot) {
-  return loadConfig(repoRoot).then((r) => ({
+async function checkConfig(repoRoot) {
+  const r = await loadConfig(repoRoot);
+  return {
     name: "ship.config.json valid",
     ok: Boolean(r?.ok),
     detail: r?.ok ? "loaded" : r?.error?.kind ?? "missing",
-  }));
+  };
 }
 
 function checkPlugin(repoRoot) {
   const path = resolve(repoRoot, ".opencode/plugin/opencode-ship.js");
   if (!existsSync(path)) return { name: "plugin", ok: false, detail: "missing" };
   try {
-    const buf = readFileSync(path);
-    return { name: "plugin", ok: buf.toString("utf8").includes("opencode-ship"), detail: "loaded" };
+    const buf = readFileSync(path, "utf8");
+    return { name: "plugin", ok: buf.includes("opencode-ship"), detail: "loaded" };
   } catch (e) {
     return { name: "plugin", ok: false, detail: e.message };
   }
@@ -88,36 +99,53 @@ function checkSkills(repoRoot) {
   };
 }
 
-function checkManagedHashes(repoRoot) {
-  return readLock(repoRoot).then(async (lock) => {
-    if (!lock) return { name: "managed hashes", ok: false, detail: "no lock" };
-    const drift = [];
-    for (const entry of lock.files ?? []) {
-      const path = resolve(repoRoot, entry.path);
-      if (!existsSync(path)) { drift.push(`missing:${entry.path}`); continue; }
-      const buf = readFileSync(path);
-      const actual = bytesHashString(buf.toString("utf8"));
-      if (actual !== entry.sha256) drift.push(`drift:${entry.path}`);
-    }
-    return { name: "managed hashes", ok: drift.length === 0, detail: drift.length ? drift.join(",") : "match" };
-  });
+async function checkManagedHashes(repoRoot) {
+  const lock = await readLock(repoRoot);
+  if (!lock) return { name: "managed hashes", ok: false, detail: "no lock" };
+  const drift = [];
+  for (const entry of lock.files ?? []) {
+    const p = resolve(repoRoot, entry.path);
+    if (!existsSync(p)) { drift.push(`missing:${entry.path}`); continue; }
+    const buf = readFileSync(p, "utf8");
+    const actual = bytesHashString(buf);
+    if (actual !== entry.sha256) drift.push(`drift:${entry.path}`);
+  }
+  return { name: "managed hashes", ok: drift.length === 0, detail: drift.length ? drift.join(",") : "match" };
 }
 
-function checkRootConfig(repoRoot) {
-  const path = resolve(repoRoot, "opencode.json");
-  const pathJsonc = resolve(repoRoot, "opencode.jsonc");
-  if (!existsSync(path) && !existsSync(pathJsonc)) return { name: "root config present", ok: true, detail: "absent (no work)" };
-  if (existsSync(path) && existsSync(pathJsonc)) return { name: "root config present", ok: false, detail: "both opencode.json and .jsonc exist" };
-  const target = existsSync(path) ? path : pathJsonc;
-  const raw = JSON.parse(readFileSync(target, "utf8"));
-  const result = applyOwnedPointers(raw);
-  return { name: "root config owned entries", ok: result.skipped.every((s) => s.reason !== "different existing value"), detail: `applied=${result.applied.length}, skipped=${result.skipped.length}` };
+async function checkRootConfig(repoRoot) {
+  const { findRootConfig } = await import("../root-config.js");
+  const candidate = findRootConfig(repoRoot);
+  if (!candidate.path) return { name: "root config owned entries", ok: true, detail: "absent (no work)" };
+  const result = readRootConfig(candidate.path);
+  if (!result.ok) return { name: "root config owned entries", ok: false, detail: `root config ${result.error.kind}` };
+  const r = applyOwnedPointers(result.value);
+  const conflict = r.skipped.find((s) => s.reason === "different existing value");
+  return {
+    name: "root config owned entries",
+    ok: !conflict,
+    detail: conflict
+      ? `conflict on ${conflict.pointer}`
+      : `applied=${r.applied.length}, skipped=${r.skipped.length}`,
+  };
 }
 
-export async function runDoctor({ rootPath, json, writeOutput = true }) {
+function writeEnvelope({ command, plan, summary, diagnostics, json, exitCode }) {
+  const conflicts = plan.filter((p) => p.kind === "conflict");
+  if (json) {
+    process.stdout.write(renderJson({ command, plan, conflicts, summary, diagnostics, exitCode }) + "\n");
+  } else {
+    process.stdout.write(renderHuman({ command, plan, conflicts, summary, diagnostics }) + "\n");
+  }
+}
+
+export async function runDoctor({ rootPath, json }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
-    return { issues: ["not in a git repository"], exitCode: 2, plan: [], conflicts: [], summary: summarise([]), diagnostics: ["not in a git repository"] };
+    const issues = ["not in a git repository"];
+    writeEnvelope({ command: "doctor", plan: [], summary: summarise([]), diagnostics: issues, json, exitCode: 2 });
+    process.exitCode = 2;
+    return { issues, exitCode: 2, plan: [] };
   }
   const repoRoot = detection.repoRoot;
   const checks = [
@@ -131,19 +159,16 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
     checkAgents(repoRoot),
     checkSkills(repoRoot),
     await checkManagedHashes(repoRoot),
-    checkRootConfig(repoRoot),
+    await checkRootConfig(repoRoot),
   ];
   const issues = checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`);
-  const plan = checks.map((c, i) => ({ kind: c.ok ? "noop" : "conflict", op: "check", target: c.name, relPath: c.name, reason: c.detail }));
+  const plan = checks.map((c) => ({
+    kind: c.ok ? "noop" : "conflict",
+    op: "check", target: c.name, relPath: c.name, reason: c.detail,
+  }));
   const summary = summarise(plan);
   const exitCode = issues.length === 0 ? 0 : 1;
-  if (writeOutput) {
-    if (json) {
-      process.stdout.write(renderJson({ command: "doctor", plan, conflicts: [], summary, diagnostics: issues, exitCode }) + "\n");
-    } else {
-      process.stdout.write(renderHuman({ command: "doctor", plan, conflicts: [], summary, diagnostics: issues }) + "\n");
-    }
-  }
-  if (!writeOutput) return { issues, exitCode, plan, conflicts: [], summary, diagnostics: issues };
-  return { issues, exitCode };
+  writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
+  process.exitCode = exitCode;
+  return { issues, exitCode, plan };
 }

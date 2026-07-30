@@ -2,11 +2,7 @@
  * Argument parsing for opencode-ship.
  *
  * Minimal, dependency-free parser with strict subcommand dispatch and
- * stable `--json` / `--root` / `--config` flags. Each command
- * receives a normalised `{ rootPath, configPath, json, replaceManaged,
- * purgeConfig, forceConfig }` argument bundle.
- *
- * On unknown flags or subcommands we exit 2 with a usage block.
+ * stable `--json` / `--root` / `--config` flags.
  */
 
 const USAGE = `opencode-ship <command> [options]
@@ -37,6 +33,7 @@ function parseFlags(argv) {
     replaceManaged: false,
     purgeConfig: false,
     forceConfig: false,
+    forceRootConfig: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -44,6 +41,7 @@ function parseFlags(argv) {
     else if (arg === "--replace-managed") options.replaceManaged = true;
     else if (arg === "--purge-config") options.purgeConfig = true;
     else if (arg === "--force-config") options.forceConfig = true;
+    else if (arg === "--force-root-config") options.forceRootConfig = true;
     else if (arg === "--root") options.rootPath = argv[++i];
     else if (arg === "--config") options.configPath = argv[++i];
     else if (arg === "-h" || arg === "--help") return { help: true };

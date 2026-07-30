@@ -1,102 +1,39 @@
 /*
  * opencode-ship command: update.
  *
- * Behaves like `init` except that conflicts are never auto-resolved;
- * the user must restore the managed file or pass --replace-managed to
- * overwrite it explicitly. Without --replace-managed we exit 3 on
- * conflict.
+ * Behaves like `init` but fails (exit 3) on conflict unless
+ * `--replace-managed` is supplied. Writes the new lock if the
+ * transaction commits.
  */
 
-import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
-import { detectProject } from "../detection/project.js";
-import { readLock } from "../lock.js";
-import { planFileInstall } from "../planner.js";
-import { executePlan } from "../transaction.js";
-import { renderHuman, renderJson, summarise } from "../report.js";
-import { writeConfig, loadConfig, renderDefaultConfig } from "../config.js";
-import { CATALOG } from "../catalog.js";
-import { bytesHashString } from "../hash.js";
+import { previewInstall, commitInstall } from "../executor.js";
 
-function packageRoot() {
-  return resolve(new URL("../../../", import.meta.url).pathname);
-}
-
-async function buildNewLock(repoRoot, mutating, source, configOp) {
-  const remain = source?.files?.filter((f) => !mutating.some((op) => op.relPath === f.path && (op.kind === "delete" || op.kind === "conflict"))) ?? [];
-  for (const op of mutating) {
-    if (op.op !== "file") continue;
-    if (op.kind === "delete" || op.kind === "conflict") continue;
-    const entry = CATALOG.find((entry) => entry.path === op.relPath);
-    const buf = await readFile(op.target);
-    remain.push({
-      path: op.relPath,
-      sha256: bytesHashString(buf.toString("utf8")),
-      mode: 0o644,
-      template: entry?.source,
-      kind: entry?.kind,
-    });
-  }
-  return {
-    contractVersion: 1,
-    manager: {
-      schemaVersion: 1,
-      name: "opencode-ship",
-      version: process.env.OPENCODE_SHIP_VERSION ?? "0.2.0",
-      templateSet: "v0.2.0",
-      appliedAt: new Date().toISOString(),
-      config: {
-        path: ".opencode/ship.config.json",
-        sha256: configOp?.sha256 ?? "",
-        existed: Boolean(configOp),
-      },
-    },
-    files: remain,
-    cleanupPending: source?.cleanupPending ?? [],
-  };
-}
-
-export async function runUpdate({ rootPath, json, replaceManaged, forceConfig }) {
-  const detection = detectProject(rootPath ?? process.cwd());
-  const repoRoot = detection.repoRoot;
-  const lock = await readLock(repoRoot);
-  const plan = await planFileInstall({ repoRoot, packageRoot: packageRoot(), lock, allowUnowned: !replaceManaged });
-  const conflicts = plan.filter((op) => op.kind === "conflict");
-  const summary = summarise(plan);
-  if (conflicts.length > 0 && !replaceManaged) {
-    return emit({ command: "update", plan, conflicts, summary, json, exitCode: 3 });
-  }
-
-  let configOp = await loadConfig(repoRoot);
-  if (!configOp?.ok || forceConfig) {
-    const written = await writeConfig(repoRoot, renderDefaultConfig(detection));
-    configOp = {
-      ok: true,
-      path: written.path,
-      raw: written.raw,
-      sha256: written.sha256,
-      canonicalSha256: written.sha256,
-      value: renderDefaultConfig(detection),
-    };
-  }
-
-  const mutating = plan.filter((op) => op.kind !== "conflict" && op.kind !== "noop" && op.kind !== "converge");
-  const tx = await executePlan({
-    repoRoot,
-    plan: mutating,
-    newLockBuilder: async () => await buildNewLock(repoRoot, mutating, lock, configOp),
+export async function runUpdate(options) {
+  const preview = await previewInstall({
+    rootPath: options.rootPath,
+    replaceManaged: options.replaceManaged,
+    forceConfig: options.forceConfig,
+    forceRootConfig: options.forceRootConfig,
   });
-  if (!tx.ok) {
-    return emit({ command: "update", plan, conflicts, summary, diagnostics: [tx.error?.message ?? "transaction failure"], json, exitCode: 4 });
+  if (!preview.ok) {
+    return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json, "update");
   }
-  return emit({ command: "update", plan, conflicts, summary, json, exitCode: 0 });
+  if (preview.conflicts.length > 0 && !options.replaceManaged) {
+    return emitFailure(3, "modified managed files; rerun with --replace-managed", options.json, "update");
+  }
+  return commitInstall(preview, { json: options.json, command: "update" });
 }
 
-function emit({ command, plan, conflicts, summary, diagnostics = [], json, exitCode }) {
+function emitFailure(code, message, json, command) {
   if (json) {
-    process.stdout.write(renderJson({ command, plan, conflicts, summary, diagnostics, exitCode }) + "\n");
+    process.stdout.write(JSON.stringify({
+      reportVersion: 1, command, status: "error",
+      plan: [], conflicts: [], summary: { create: 0, update: 0, noop: 0, delete: 0, conflict: 0, converge: 0 },
+      diagnostics: [message], exitCode: code,
+    }, null, 2) + "\n");
   } else {
-    process.stdout.write(renderHuman({ command, plan, conflicts, summary, diagnostics }) + "\n");
+    process.stdout.write(`opencode-ship: ${message}\n`);
   }
-  process.exit(exitCode);
+  process.exitCode = code;
+  return { ok: false, exitCode: code };
 }

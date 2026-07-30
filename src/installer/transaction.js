@@ -1,22 +1,17 @@
 /*
  * Multi-file transaction executor.
  *
- * Best-effort atomic updates with a recoverable journal. Every
- * operation:
- *   1. acquires an exclusive lock file under .git/opencode-ship/.txn;
- *   2. snapshots the original bytes and mode;
+ * Best-effort atomic updates with recoverable journal. Each operation:
+ *   1. acquires an exclusive lock file under `.git/opencode-ship/.txn.lock`;
+ *   2. snapshots original bytes and mode into the journal entry;
  *   3. writes to a sibling temporary file, `fsync`s, then renames;
- *   4. updates the journal after each rename;
- *   5. promotes the lock as the last step (the commit marker).
+ *   4. updates the journal after each operation so a recovery can
+ *      recreate the pre-image;
+ *   5. fsyncs the parent directory.
  *
- * Failure during pre-commit operations triggers reverse-order rollback.
- * Failure post-commit surfaces a "degraded cleanup" warning; the next
- * mutating command picks up where we left off.
- *
- * The executor is purely synchronous in shape: each operation is
- * sequence-bound and explicit. Concurrency is prevented at the lock
- * level (`.git/opencode-ship/.txn.lock`); other installer instances
- * fail fast with exit code 4 when the lock is held.
+ * The lock file is committed last (not part of the journal) by
+ * `writeLock`. The journal itself is the recovery artifact; it is
+ * unlinked when the transaction commits successfully.
  */
 
 import {
@@ -42,8 +37,7 @@ function gitDir(repoRoot) {
 }
 
 function lockDir(repoRoot) {
-  const dir = gitDir(repoRoot) ?? repoRoot;
-  return resolve(dir, "opencode-ship");
+  return resolve(gitDir(repoRoot) ?? repoRoot, "opencode-ship");
 }
 
 function transactionLockPath(repoRoot) {
@@ -51,25 +45,21 @@ function transactionLockPath(repoRoot) {
 }
 
 function journalPath(repoRoot, txnId) {
-  return resolve(lockDir(repoRoot), `${txnId}.journal`);
+  return resolve(lockDir(repoRoot), `.txn-${txnId}.journal`);
 }
 
 async function acquireLock(repoRoot, txnId) {
-  const lockDirPath = lockDir(repoRoot);
-  await mkdir(lockDirPath, { recursive: true });
-  const lockPath = transactionLockPath(repoRoot);
-  await writeFile(lockPath, JSON.stringify({ pid: process.pid, txnId, startedAt: new Date().toISOString() }), {
-    flag: "wx",
-  });
-  return lockPath;
+  const dir = lockDir(repoRoot);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    transactionLockPath(repoRoot),
+    JSON.stringify({ pid: process.pid, txnId, startedAt: new Date().toISOString() }),
+    { flag: "wx" },
+  );
 }
 
 async function releaseLock(repoRoot) {
-  try {
-    await unlink(transactionLockPath(repoRoot));
-  } catch {
-    // already gone
-  }
+  try { await unlink(transactionLockPath(repoRoot)); } catch { /* ignore */ }
 }
 
 async function fsyncDir(path) {
@@ -77,92 +67,170 @@ async function fsyncDir(path) {
     const handle = await open(path, "r");
     await handle.sync();
     await handle.close();
+  } catch { /* ignore */ }
+}
+
+function randomToken() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function captureOriginal(target) {
+  if (!existsSync(target)) return null;
+  try {
+    const bytes = await readFile(target);
+    const fileStat = await stat(target);
+    return { bytes, mode: fileStat.mode & 0o777 };
   } catch {
-    /* not supported on every platform */
+    return null;
   }
 }
 
-async function stageFile({ target, bytes, mode }) {
-  const sibling = `${target}.txn-${Math.random().toString(36).slice(2, 10)}`;
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(sibling, bytes, { mode });
-  const handle = await open(sibling, "r+");
-  await handle.sync();
-  await handle.close();
-  return sibling;
-}
-
-async function promote({ target, staged, backupPath, repoRoot, journal }) {
-  let backupBytes = null;
-  let backupMode = null;
-  if (existsSync(target)) {
-    const buf = await readFile(target);
-    backupBytes = buf;
-    backupMode = (await stat(target)).mode & 0o777;
-    await writeFile(backupPath, buf, { mode: backupMode });
-  }
-  await rename(staged, target);
-  await fsyncDir(dirname(target));
-  journal.entries.push({ op: "promote", target, backupPath, bytes: backupBytes, mode: backupMode });
-  return { promoted: true };
-}
-
-async function rollback(journal) {
-  const entries = [...journal.entries].reverse();
-  for (const entry of entries) {
-    if (entry.op === "promote") {
-      if (entry.bytes !== null) {
-        await writeFile(entry.target, entry.bytes, { mode: entry.mode ?? 0o644 });
-      } else {
-        try { await unlink(entry.target); } catch { /* noop */ }
-      }
-    }
-  }
-  try { await unlink(journalPath(journal.repoRoot, journal.txnId)); } catch { /* noop */ }
-  try { await unlink(transactionLockPath(journal.repoRoot)); } catch { /* noop */ }
+function asMode(mode) {
+  return typeof mode === "number" ? mode : 0o644;
 }
 
 async function writeJournal(repoRoot, txnId, journal) {
-  const path = journalPath(repoRoot, txnId);
-  await writeFile(path, JSON.stringify(journal, null, 2), "utf8");
+  await writeFile(journalPath(repoRoot, txnId), JSON.stringify(journal, null, 2), "utf8");
 }
 
-export async function executePlan({ repoRoot, plan, lock = null, newLockBuilder = null, txnId = null }) {
-  const id = txnId ?? `txn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const acquired = await acquireLock(repoRoot, id);
-  const journal = { repoRoot, txnId: id, startedAt: new Date().toISOString(), entries: [] };
-  await writeJournal(repoRoot, id, journal);
-  try {
-    for (const op of plan) {
-      if (op.kind === "conflict") continue;
-      if (op.op === "file") {
-        if (op.kind === "delete") {
-          const backup = `${op.target}.txn-backup-${Math.random().toString(36).slice(2, 8)}`;
-          if (existsSync(op.target)) {
-            await rename(op.target, backup);
-            journal.entries.push({ op: "promote", target: op.target, backupPath: backup, bytes: null, mode: null });
-          }
-        } else {
-          const staged = await stageFile({ target: op.target, bytes: op.bytes ?? Buffer.alloc(0), mode: op.mode ?? 0o644 });
-          await promote({ target: op.target, staged, backupPath: `${op.target}.txn-backup`, repoRoot, journal });
+async function clearJournal(repoRoot, txnId) {
+  if (!txnId) return;
+  try { await unlink(journalPath(repoRoot, txnId)); } catch { /* ignore */ }
+}
+
+async function recover(repoRoot) {
+  const dir = lockDir(repoRoot);
+  if (!existsSync(dir)) return { recovered: false };
+  const { readdir } = await import("node:fs/promises");
+  const names = await readdir(dir).catch(() => []);
+  const journals = names.filter((n) => n.startsWith(".txn-") && n.endsWith(".journal"));
+  if (!journals.length) return { recovered: false };
+  let totalRecovered = 0;
+  for (const name of journals) {
+    let payload;
+    try {
+      const raw = await readFile(resolve(dir, name), "utf8");
+      payload = JSON.parse(raw);
+    } catch {
+      await unlink(resolve(dir, name)).catch(() => null);
+      continue;
+    }
+    const journal = payload;
+    for (const entry of [...(journal.entries ?? [])].reverse()) {
+      if (entry.op !== "promote") continue;
+      if (entry.original) {
+        try {
+          await writeFile(entry.target, entry.original.bytes, { mode: entry.original.mode ?? 0o644 });
+        } catch { /* ignore */ }
+      } else if (entry.staged) {
+        try {
+          await rename(entry.staged, entry.target);
+        } catch {
+          try { await unlink(entry.staged); } catch { /* ignore */ }
         }
       }
     }
+    await unlink(resolve(dir, name)).catch(() => null);
+    totalRecovered += 1;
+  }
+  await releaseLock(repoRoot);
+  return { recovered: totalRecovered > 0, recoveredCount: totalRecovered };
+}
+
+export async function executePlan({ repoRoot, plan, newLockBuilder }) {
+  const recovered = await recover(repoRoot);
+  const txnId = `txn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  try {
+    await acquireLock(repoRoot, txnId);
+  } catch (e) {
+    return { ok: false, error: { kind: "lock-held", message: e?.message ?? String(e) } };
+  }
+
+  const journal = { repoRoot, txnId, startedAt: new Date().toISOString(), entries: [] };
+  await writeJournal(repoRoot, txnId, journal);
+
+  try {
+    for (const op of plan) {
+      if (op.op !== "file") continue;
+      if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge") continue;
+
+      const original = await captureOriginal(op.target);
+
+      if (op.kind === "delete") {
+        if (!existsSync(op.target)) continue;
+        const backup = `${op.target}.txn-${randomToken()}-backup`;
+        await rename(op.target, backup);
+        journal.entries.push({
+          op: "promote",
+          target: op.target,
+          staged: backup,
+          original,
+          kind: "delete",
+        });
+      } else {
+        const tempPath = `${op.target}.txn-${randomToken()}`;
+        await mkdir(dirname(op.target), { recursive: true });
+        await writeFile(tempPath, op.bytes ?? Buffer.alloc(0), { mode: asMode(op.mode) });
+        const h = await open(tempPath, "r+");
+        await h.sync();
+        await h.close();
+        await rename(tempPath, op.target);
+        journal.entries.push({
+          op: "promote",
+          target: op.target,
+          staged: tempPath,
+          original,
+          kind: op.kind,
+        });
+      }
+      await fsyncDir(dirname(op.target));
+      await writeJournal(repoRoot, txnId, journal);
+    }
+
     if (newLockBuilder) {
       const lockValue = await newLockBuilder();
-      const lockBytes = JSON.stringify(lockValue, null, 2) + "\n";
-      const staged = await stageFile({ target: `${repoRoot}/.opencode/ship.lock.json`, bytes: Buffer.from(lockBytes, "utf8"), mode: 0o644 });
-      await promote({ target: `${repoRoot}/.opencode/ship.lock.json`, staged, backupPath: `${repoRoot}/.opencode/ship.lock.json.txn-backup`, repoRoot, journal });
+      const { writeLock: writer } = await import("./lock.js");
+      const lockPathTarget = `${repoRoot}/.opencode/ship.lock.json`;
+      journal.entries.push({
+        op: "promote",
+        target: lockPathTarget,
+        staged: lockPathTarget,
+        original: await captureOriginal(lockPathTarget),
+        kind: "lock",
+      });
+      await writer(repoRoot, lockValue);
+      await writeJournal(repoRoot, txnId, journal);
     }
-    await writeJournal(repoRoot, id, journal);
-    try { await unlink(journalPath(repoRoot, id)); } catch { /* noop */ }
-    return { ok: true, txnId: id };
+
+    await clearJournal(repoRoot, txnId);
+    return { ok: true, txnId, recovered: recovered.recovered ?? false, recoveredCount: recovered.recoveredCount ?? 0 };
   } catch (e) {
-    await rollback(journal);
+    await rollback(repoRoot, journal);
     return { ok: false, error: { kind: "transaction-failed", message: e?.message ?? String(e) } };
   } finally {
     await releaseLock(repoRoot);
   }
 }
 
-
+async function rollback(repoRoot, journal) {
+  for (const entry of [...(journal.entries ?? [])].reverse()) {
+    if (entry.op !== "promote") continue;
+    if (entry.original) {
+      try {
+        await writeFile(entry.target, entry.original.bytes, { mode: entry.original.mode ?? 0o644 });
+      } catch { /* ignore */ }
+    } else if (entry.staged) {
+      try {
+        await rename(entry.staged, entry.target);
+      } catch {
+        try { await unlink(entry.staged); } catch { /* ignore */ }
+      }
+    } else {
+      try { await unlink(entry.target); } catch { /* ignore */ }
+    }
+    if (entry.staged && entry.staged !== entry.target && existsSync(entry.staged)) {
+      try { await unlink(entry.staged); } catch { /* ignore */ }
+    }
+  }
+  if (journal.txnId) await clearJournal(repoRoot, journal.txnId);
+}
