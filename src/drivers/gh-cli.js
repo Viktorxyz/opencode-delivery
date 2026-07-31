@@ -35,6 +35,11 @@ function defaultRunner(cwd, env) {
 }
 
 function viewFields() {
+  // `gh pr view --json` rejects unknown field names on some `gh`
+  // versions (notably `merged`), causing every pr view to fail with
+  // "Could not resolve to a node with the global id of 'merged'".
+  // We rely on `state` (`OPEN`/`CLOSED`/`MERGED`) and `mergedAt`
+  // instead — both are stable fields available across `gh` 2.x.
   return [
     "number",
     "url",
@@ -44,12 +49,16 @@ function viewFields() {
     "isDraft",
     "mergeable",
     "mergeStateStatus",
-    "merged",
+    "state",
     "mergedAt",
   ].join(",");
 }
 
 function pullRequestSummaryFromView(fields) {
+  const merged =
+    fields.state === "MERGED" ||
+    fields.merged === true ||
+    (typeof fields.mergedAt === "string" && fields.mergedAt.length > 0);
   return {
     number: fields.number,
     url: fields.url,
@@ -59,7 +68,8 @@ function pullRequestSummaryFromView(fields) {
     draft: Boolean(fields.isDraft),
     mergeable: fields.mergeable ?? "UNKNOWN",
     mergeStateStatus: fields.mergeStateStatus ?? "UNKNOWN",
-    merged: Boolean(fields.merged),
+    state: fields.state ?? "UNKNOWN",
+    merged: Boolean(merged),
     mergedAt: fields.mergedAt ?? null,
   };
 }

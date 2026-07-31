@@ -1,33 +1,61 @@
 {
-  "name": "opencode-delivery",
-  "version": "0.1.3",
-  "private": true,
-  "description": "Tech-stack-neutral OpenCode delivery package: lifecycle state machine, typed tools, reviewer/verifier, project-adapter contract.",
+  "name": "opencode-ship",
+  "version": "0.2.0",
+  "private": false,
+  "description": "npm-distributed OpenCode installer that materializes the delivery plugin, reviewer/verifier agents, skills, ship config and lock into any consumer repository.",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=22.6.0",
+    "opencode": ">=1.15.5"
   },
-  "main": "src/index.js",
-  "types": "src/types.d.ts",
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.15.5 <2"
+  },
+  "main": "./dist/plugin.js",
+  "types": "./dist/plugin.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/plugin.d.ts",
+      "import": "./dist/plugin.js"
+    },
+    "./core": {
+      "import": "./dist/core.js"
+    },
+    "./schema/project-adapter.schema.json": "./schema/project-adapter.schema.json",
+    "./schema/ship-config.schema.json": "./schema/ship-config.schema.json",
+    "./schema/ship-lock.schema.json": "./schema/ship-lock.schema.json",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "opencode-ship": "./dist/cli.js"
+  },
   "files": [
-    "src",
-    "README.md",
-    "LICENSE",
-    "CHANGELOG.md",
+    "dist",
+    "assets",
     "schema",
-    "skills",
-    "agents"
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/prepack.mjs",
     "lint": "node scripts/lint.mjs",
     "typecheck": "node scripts/typecheck.mjs",
-    "test": "tsx --test --test-concurrency=1 --test-reporter=spec --tsconfig tsconfig.json tests/state/lifecycle.test.mjs tests/state/gates.test.mjs tests/state/manifest-store.test.mjs tests/drivers/git.test.mjs tests/drivers/github-driver.test.mjs tests/recovery.test.mjs tests/doctor.test.mjs tests/adapter.test.mjs tests/tools/inspect-issue.test.mjs tests/tools/worktree.test.mjs tests/tools/verify.test.mjs tests/tools/ready-merge.test.mjs tests/tools/review-cleanup.test.mjs",
+    "test": "node scripts/run-all-tests.mjs",
+    "test:all": "node scripts/run-all-tests.mjs",
+    "test:installer": "node --test --test-concurrency=1 --test-reporter=spec tests/installer/**/*.test.mjs",
+    "test:plugin": "node --test --test-concurrency=1 --test-reporter=spec tests/plugin/**/*.test.mjs",
+    "test:package": "node --test --test-concurrency=1 --test-reporter=spec tests/package/*.test.mjs",
     "format:check": "node scripts/format-check.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "1.18.10",
     "@types/node": "^22.10.2",
+    "esbuild": "^0.25.0",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3"
   }

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Viktorxyz/opencode-delivery/schema/project-adapter.schema.json",
+  "title": "opencode-ship project adapter",
+  "type": "object",
+  "required": ["contractVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": 1 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remote": { "type": "string", "minLength": 1 },
+        "defaultBranch": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "object", "additionalProperties": false, "properties": { "discover": { "type": "boolean" }, "name": { "type": "string", "minLength": 1 } } }
+          ]
+        }
+      }
+    },
+    "forge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": { "const": "github" },
+        "issueRequired": { "type": "boolean" },
+        "draftAfterFirstCommit": { "type": "boolean" },
+        "issueClosingSyntax": { "type": "boolean" }
+      }
+    },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "branchTemplate": { "type": "string", "minLength": 1 },
+        "bootstrap": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "argv"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "argv": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "minItems": 1
+              },
+              "timeoutMs": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "requireCleanDiffAfter": { "type": "boolean" },
+        "invalidateOnHeadChange": { "type": "boolean" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "invalidateOnHeadChange": { "type": "boolean" }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": { "const": "github-status-checks" },
+        "requiredChecks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "wait": { "type": "boolean" },
+        "flakyRetry": { "type": "integer", "enum": [0, 1] }
+      }
+    },
+    "ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": { "enum": ["review", "local-verification", "remote-ci"] },
+          "uniqueItems": true
+        },
+        "stopAfterReady": { "type": "boolean" }
+      }
+    },
+    "merge": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": { "const": "squash" },
+        "policy": { "const": "explicit-user-request-only" },
+        "requireFreshGates": { "type": "boolean" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "when": { "const": "next-task" },
+        "requires": {
+          "type": "array",
+          "items": { "enum": ["pr-merged", "worktree-clean", "no-unpublished-commits"] },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

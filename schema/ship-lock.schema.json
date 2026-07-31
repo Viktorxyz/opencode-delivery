@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Viktorxyz/opencode-delivery/schema/ship-lock.schema.json",
+  "title": "opencode-ship install lock",
+  "type": "object",
+  "required": ["contractVersion", "manager", "files", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": { "const": 1 },
+    "manager": {
+      "type": "object",
+      "required": ["schemaVersion", "name", "version", "appliedAt", "config"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "name": { "type": "string", "pattern": "^opencode-ship$" },
+        "version": { "type": "string", "minLength": 1 },
+        "templateSet": { "type": "string", "minLength": 1 },
+        "appliedAt": { "type": "string", "format": "date-time" },
+        "config": {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "existed": { "type": "boolean" }
+          }
+        },
+        "rootDocuments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "pointers"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "format": { "enum": ["json", "jsonc"] },
+              "pointers": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["pointer", "strategy"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "pointer": { "type": "string", "pattern": "^/" },
+                    "strategy": { "enum": ["value", "object-entry", "array-member"] },
+                    "installedSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "previous": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "existed": { "type": "boolean" },
+                        "value": {}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "mode"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "mode": { "type": "integer", "minimum": 0, "maximum": 511 },
+          "template": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["plugin", "agent", "skill", "config", "lock"] }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["lockSha256"],
+      "additionalProperties": false,
+      "properties": {
+        "lockSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "compat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "opencodeMin": { "type": "string" },
+        "coreVersion": { "type": "string" }
+      }
+    },
+    "cleanupPending": {
+      "type": "array",
+      "description": "Tasks whose immediate post-merge cleanup could not complete; retry on next delivery task or plugin startup.",
+      "items": {
+        "type": "object",
+        "required": ["taskId", "failedAt", "stage", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "taskId": { "type": "string" },
+          "failedAt": { "type": "string", "format": "date-time" },
+          "stage": { "enum": ["preconditions", "worktree-remove", "branch-delete", "manifest-seal", "manifest-delete"] },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -38,6 +38,34 @@ suite("github driver", { concurrency: false }, () => {
     }
   });
 
+  test("gh-cli does not request the removed `merged` field", { serial: true }, async () => {
+    const { defaultRunner } = await import("../../src/drivers/gh-cli.js");
+    void defaultRunner;
+    const r = recorder(async (args) => {
+      if (args[0] === "pr" && args[1] === "view") {
+        const jsonArg = args[args.indexOf("--json") + 1] ?? "";
+        // Assert the field set never includes `merged` as a top-level field.
+        assert.equal(jsonArg.includes("\"merged\","), false,
+          `viewFields unexpectedly contains merged: ${jsonArg}`);
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 1, url: "u", baseRefName: "main", headRefName: "f",
+            headRefOid: "abc", isDraft: false, mergeable: "MERGEABLE",
+            mergeStateStatus: "CLEAN", state: "MERGED", mergedAt: "now",
+          }),
+          stderr: "",
+        };
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    const d = createGhDriver({ runner: r.run });
+    const pr = await d.readPullRequest({ repo: "a/b", number: 1 });
+    assert.equal(pr.merged, true);
+    assert.equal(pr.mergedAt, "now");
+    assert.equal(pr.state, "MERGED");
+  });
+
   test("ensureIssue reuses an existing open issue when title matches", { serial: true }, async () => {
     const r = recorder(async (args) => {
       if (args[0] === "issue" && args[1] === "list") {

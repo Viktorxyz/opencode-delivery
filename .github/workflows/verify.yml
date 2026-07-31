@@ -3,6 +3,9 @@ name: verify
 on:
   pull_request:
   merge_group:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -16,6 +19,9 @@ jobs:
     name: delivery-verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -25,7 +31,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
       - name: install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: verify
         run: npm run verify
+      - name: packed-artifact smoke
+        run: npm run test:package
+

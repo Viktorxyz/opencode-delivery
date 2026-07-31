@@ -1,105 +1,136 @@
-# opencode-delivery
+# opencode-ship
 
-> Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
+> npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.1.3. The full lifecycle is green and covered by deterministic unit tests (113/113) plus two TypeScript checks: the strict consumer-fixture typecheck that imports every public value export, and the source-level `tsc --checkJs --allowJs` typecheck over `src/**/*.{js,mjs}` that catches `no-undef` style drift. The reviewer agent is now an isolated mutation-bounded subagent; `delivery_ready` / `delivery_merge` query CI by PR identity; `delivery_review` refuses to record a SHA it did not review; `delivery_cleanup` uses a CAS-style `git update-ref -d` and recovers bootstrap-failure manifests.
+> **Status:** v0.2.0. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. All 150 tests and the packed-artifact smoke check pass under `npm run verify`.
 
 ---
 
 ## What this package is
 
-`opencode-delivery` is a vendor-agnostic OpenCode delivery layer. It owns the small set of operations that turn a one-line user request into a green, conflict-free, ready-to-merge pull request, without leaking into the project’s tech stack, package manager, or test runner.
+`opencode-ship` is the npm-distributed successor to `opencode-delivery`. It bundles:
 
-The package ships:
-
+- a **nine-tool OpenCode plugin** that auto-loads from `.opencode/plugin/opencode-ship.js`;
 - a **lifecycle state machine** for one issue → one worktree → one PR → one merge → one cleanup;
 - a **Git worktree driver** (no rebase-after-push, no force-push, no `--force-with-lease`);
 - a **GitHub CLI driver** that talks only to typed `gh pr/issue` verbs (never `gh api`);
-- a **typed OpenCode tool surface** (inspect, issue, worktree, verify, pr, ready, merge, cleanup);
-- a **project-adapter schema** (`delivery.json` + `delivery.lock.json`) so any project can declare its own verify/bootstrap/CI commands;
-- **reviewer** and **verifier** subagents that match the canonical six-section envelope;
+- a **project adapter** (`.opencode/ship.config.json`) so any project can declare its own verify/bootstrap/CI commands;
+- **reviewer** and **verifier** subagents, both with strictly bounded `delivery_*` permissions;
 - a **delivery-workflow** skill that drives the canonical lifecycle;
 - a **planning-research-checkpoint** skill that offers a single, optional Deep Research gate per non-trivial plan;
 - a **delivery doctor** that validates the adapter, package pin, and OpenCode compatibility;
+- an **install/doctor/diff/update/uninstall** CLI with stable exit codes and `--json` envelopes;
+- a **.opencode/ship.lock.json** lock that records managed paths, hashes, and the installer-owned JSON pointers;
 - **recovery** for interrupted cleanup, half-written state files, and stale worktrees.
 
 The package **does not** own:
 
 - package managers, test commands, linters, docs layout, or CI templates;
 - issue-label catalogues, release scripts, or deploy hooks;
-- framework- or language-specific expertise (Better Auth, React, NLU, etc. live in consumer projects).
+- framework- or language-specific expertise.
 
 ## Distribution
 
-- Public GitHub repo, MIT licensed.
-- Consumer projects pin a commit hash via `opencode.json` and a project plugin shim; the package is loaded by OpenCode through Bun’s npm plugin loader.
-- No runtime auto-update. Updates arrive as normal PRs against this repo.
+Once `opencode-ship` is published, consumers install with `pnpm dlx` (or `npx`) and never edit the file by hand:
 
-## Repository settings (intended)
+```
+pnpm dlx opencode-ship@latest init      # install managed files
+pnpm dlx opencode-ship@latest update    # apply a packaged upgrade
+pnpm dlx opencode-ship@latest diff      # preview what would change
+pnpm dlx opencode-ship@latest doctor    # environment and lock audit
+pnpm dlx opencode-ship@latest uninstall # remove only the files still matching the lock
+```
 
-- Squash merge only.
-- Merge commits disabled.
-- Rebase merge disabled.
-- Automatic remote head-branch deletion after merge.
-- Auto-merge disabled.
-- GitHub Actions required checks are added later; the first release ships the workflow as informational so consumers can adopt on GitHub Free private plans first.
+If you want to try a pre-release tarball locally without publishing to npm:
 
-## Lifecycle (default)
+```bash
+pnpm dlx --package=/absolute/path/opencode-ship-0.2.0.tgz opencode-ship init
+```
 
-1. Begin a Build task: clean up provably-merged worktrees.
+The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user. Use `--force-root-config` on `init` to create a minimal `opencode.json` if the consumer has none.
+
+### Managed file layout
+
+```
+.opencode/plugin/opencode-ship.js
+.opencode/agents/delivery-reviewer.md
+.opencode/agents/delivery-verifier.md
+.opencode/skills/delivery-workflow/SKILL.md
+.opencode/skills/planning-research-checkpoint/SKILL.md
+.opencode/ship.config.json     # user-owned; written by `init` only if absent
+.opencode/ship.lock.json       # installer-managed; drives update + uninstall
+```
+
+### Schema files
+
+These JSON Schemas are published and discoverable through the `exports` map:
+
+- `opencode-ship/schema/project-adapter.schema.json`
+- `opencode-ship/schema/ship-config.schema.json`
+- `opencode-ship/schema/ship-lock.schema.json`
+
+### Legacy migration
+
+Existing consumers of `opencode-delivery@0.1.x` (commit-pinned shim) can run `pnpm dlx opencode-ship@latest init` from the same checkout. Migration recognises `.opencode/delivery.json`, `.opencode/delivery.lock.json`, the two canonical agents, and the generic plugin `.opencode/plugin/delivery.ts`, and adopts them when their bytes match. Legacy artifacts are preserved on disk so a downgrade remains possible; the installer does NOT modify Leo or any other consumer.
+
+## Lifecycle
+
+1. Begin a Build task: the delivery plugin immediately runs any queued post-merge cleanups. Failed cleanups are recorded in `ship.lock.json#cleanupPending` and retried at the next delivery task or plugin startup.
 2. Optional Deep Research checkpoint for non-trivial plans.
 3. Find or create exactly one issue per PR.
 4. Discover the default branch and fetch it.
 5. Create a dedicated worktree and branch.
-6. Run the project adapter’s bootstrap command.
+6. Run the project adapter's bootstrap command.
 7. Implement and commit.
 8. Push and open a draft PR linked to the issue (`Closes #N`).
 9. Continue commits/pushes on the same branch.
 10. Merge latest default branch into the feature branch before final review.
-11. Resolve mechanical conflicts autonomously; ask the user about semantic ones.
-12. Run independent reviewer on the final HEAD.
-13. Run canonical local verification.
-14. Push and wait for required remote CI checks.
-15. Mark the PR Ready and stop.
-16. Explicit “merge it” re-runs the freshness checks and performs the squash merge.
-17. Local cleanup runs at the next Build task.
+11. Run independent reviewer on the final HEAD.
+12. Run canonical local verification.
+13. Push and wait for required remote CI checks.
+14. Mark the PR Ready and stop.
+15. Explicit "merge it" re-runs the freshness checks and performs the squash merge.
+16. The plugin immediately invokes `delivery_cleanup`; failures leave `cleanupPending` for the next session.
 
-## Status
+## Exit codes
 
-The reusable core is operational at v0.1.3. The full lifecycle is covered by deterministic unit tests plus two TypeScript typechecks: `npm run verify` runs `format:check`, `lint`, `typecheck` (which chains `node --check`, the consumer-fixture `tsc --noEmit`, and the source-level `tsc --checkJs --allowJs`), and the test suite against 32 suites across 27 test files. All five steps are green at HEAD; **113/113 tests pass** in a single deterministic run.
+| Code | Meaning |
+|---:|---|
+| `0` | success / no-op |
+| `1` | expected negative result (`diff` saw changes; `doctor` unhealthy) |
+| `2` | invalid input, unsupported project, ambiguous detection |
+| `3` | ownership / hash / structural conflict |
+| `4` | filesystem, staging, rollback, or transaction failure |
+| `5` | unsupported lock/config schema |
 
-### What is implemented in v0.1.1
+## Development
 
-- `src/adapter.js` — project-adapter JSON schema and loader (`loadAdapter`, `validateAdapter`, `writeLock`, `readLock`, `findOpencodeDir`).
-- `src/state/lifecycle.js` — `issue-linked → worktree-created → draft-open → validating → ready → merged → cleanup-pending → cleaned` state machine with idempotent self-transitions and `failed` / `aborted` exits.
-- `src/state/manifest-store.js` — atomic, `git-common-dir`-scoped manifest persistence with `git rev-parse --path-format=absolute` resolution.
-- `src/drivers/git.js` — `spawnSync(git, argv)`-only worktree primitives, plus `remoteExists` / `createWorktreeFromLocal` fallbacks.
-- `src/drivers/github.js` — `parseRepoSlug` and the typed `GithubDriver` interface contract.
-- `src/drivers/gh-cli.js` — production driver backed by typed `gh pr/issue` verbs (no `gh api`). Accepts an optional `{ runner, cwd, env }` for deterministic tests. `createGhStub` factory ships a queue-based stub for tests.
-- `src/recovery.js` — `scanRecovery`, `wouldCleanupBeSafe`, `removeManifestIfSafe`.
-- `src/doctor.js` — adapter/OpenCode compatibility report.
-- `src/gates.js` — centralised Ready/Merge gate checking (reviewer SHA, verifier SHA, PR head SHA, required CI checks).
-- `src/tools/delivery-*.js` — all nine typed tool factories: `inspect`, `issue`, `worktree`, `verify`, `pr`, `ready`, `review`, `merge`, `cleanup`.
-- `agents/delivery-reviewer.md`, `agents/delivery-verifier.md` — six-section envelope contracts.
-- `skills/delivery-workflow/SKILL.md`, `skills/planning-research-checkpoint/SKILL.md` — orchestration and research-checkpoint skills.
-- `schema/project-adapter.example.json`, `schema/project-opencode-shim.json` — consumer templates.
-- `.github/workflows/verify.yml` — required-check template (`delivery-verify` job).
+`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. 150 tests cover lifecycle, drivers, recovery, doctor, agents, the installer CLI, plugin registration, the isolated packed-artifact smoke check, and the order-preserving root-config merge.
 
-### Tests
+```
+npm ci
+npm run build
+npm run verify
+```
 
-`npm run verify` (alias of `node scripts/verify.mjs`) runs `format:check`, `lint`, `typecheck`, and the deterministic `tsx --test` suite. 13 test files cover:
-
-- Lifecycle state machine (every transition, every forbidden transition, monotonic timestamps, `fatalReason`).
-- Manifest persistence (round-trip, missing, empty list, multi-manifest, atomic write, delete).
-- Git driver (worktree listing, clean / rebase detection, worktree creation).
-- GitHub driver (slug parsing, issue search vs create, `Closes #N` injection, checks mapping, stub queue).
-- Adapter validation (every field, both happy and unhappy paths).
-- Recovery helpers (full safe shape, every unsafe signal).
-- Doctor (adapter contract version, lock match, package version).
-- Gates (`checkGates` returns the typed envelope for every failure reason, opt-out respected).
-- Every `delivery_*` tool with happy paths, missing inputs, missing manifests, wrong states, idempotency, stale heads, missing/pending/failing CI, dirty worktrees, base mismatches, missing merges, missing unpublished-commit guards.
+The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent.
 
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
-- **Versioning:** SemVer. v0.1.1 ships as the first fully-tested release. Subsequent releases follow the standard `<major>.<minor>.<patch>` rules described in the consumer adapter.
+- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. Subsequent releases follow standard `<major>.<minor>.<patch>` rules.
+- **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5 < 2` and OpenCode `>= 1.15.5`.
+
+## FAQ
+
+**Is the package on npm?**
+
+Not yet. The repository is a draft PR. Once the release workflow lands, the first published tag will produce a GitHub Release tarball and (optionally) an npm release. Until then, install from a local tarball with `pnpm dlx --package=…`.
+
+**Where is the `@opencode-ai/plugin` dependency?**
+
+The plugin is bundled (`scripts/build.mjs` does not externalize it). Consumers do not need to install `@opencode-ai/plugin` themselves; the runtime is self-contained. The package still declares a peer dependency so consumers who also use the opencode runtime are not given duplicate copies.
+
+**What does `init` actually write?**
+
+It writes (or refreshes) the seven managed files in `.opencode/`, the user-owned `ship.config.json`, and the integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so.
