@@ -20,7 +20,6 @@
       "import": "./dist/plugin.js"
     },
     "./core": {
-      "types": "./dist/core.d.ts",
       "import": "./dist/core.js"
     },
     "./schema/project-adapter.schema.json": "./schema/project-adapter.schema.json",
