@@ -1,0 +1,67 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: opencode-ship tarball
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: verify
+        run: npm run verify
+
+      - name: packed-artifact smoke
+        run: npm run test:package
+
+      - name: pack
+        run: |
+          set -euo pipefail
+          version="$(node -e 'console.log(require("./package.json").version)')"
+          tag="v${version}"
+          mkdir -p dist-pkg
+          npm pack --pack-destination dist-pkg
+          tarball="dist-pkg/opencode-ship-${version}.tgz"
+          mv -v "$tarball" "dist-pkg/${tag}.tgz" || cp -v "$tarball" "dist-pkg/${tag}.tgz"
+          echo "tarball=dist-pkg/${tag}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: opencode-ship ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist-pkg/${{ github.ref_name }}.tgz
+            dist/plugin.js
+            dist/cli.js
+            dist/core.js
+            dist/plugin.d.ts
+            dist/cli.d.ts
+            dist/core.d.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
