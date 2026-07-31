@@ -163,11 +163,33 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
   const target = detected.path ?? defaultRootConfigPath(repoRoot);
   const previous = lock?.manager?.rootDocuments?.find((d) => d.path === detected.relative);
 
-  if (!existsSync(target) && !forceRepair) {
+  const fileMissing = !existsSync(target);
+  if (fileMissing && !forceRepair) {
     return {
       kind: "noop", op: "root-config", target, relPath: detected.relative,
       reason: "no root opencode.json present",
       edits: [],
+    };
+  }
+  if (fileMissing && forceRepair) {
+    const { synthesizeDefaultRootConfig, formatRootConfig } = await import("./root-config.js");
+    const doc = synthesizeDefaultRootConfig();
+    const bytes = Buffer.from(formatRootConfig(doc), "utf8");
+    const newSha = bytesHashString(stableStringify(doc));
+    const installedPointers = [];
+    return {
+      kind: "create",
+      op: "root-config",
+      target,
+      relPath: detected.relative,
+      bytes,
+      desiredSha: newSha,
+      currentSha: null,
+      edits: [{ kind: "create", pointer: "(file)", value: "(created)" }],
+      pointerRecords: installedPointers,
+      format: "json",
+      document: doc,
+      reason: "creating root opencode.json with installer-owned Build permissions",
     };
   }
   const docResult = readRootConfig(target);
@@ -188,8 +210,23 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     if (s.reason === "already equal") continue;
     edits.push({ kind: "conflict", pointer: s.pointer, reason: s.reason, existing: s.existing, desired: s.desired });
   }
-  const newDocBytes = Buffer.from(JSON.stringify(result.doc, null, 2) + "\n", "utf8");
-  const newSha = bytesHashString(stableStringify(result.doc));
+  const { formatRootConfigPreserving, formatRootConfig } = await import("./root-config.js");
+  const { parseRootConfigPreservingOrder } = await import("./root-config.js");
+  const { setPointer } = await import("./json-pointer.js");
+  let bytes;
+  let docForWrite = result.doc;
+  try {
+    const { value: sourceValue, format: sourceFormat } = parseRootConfigPreservingOrder(docResult.raw);
+    docForWrite = sourceValue;
+    for (const entry of result.applied) {
+      docForWrite = setPointer(docForWrite, entry.pointer, entry.value);
+    }
+    bytes = Buffer.from(formatRootConfigPreserving(docForWrite), "utf8");
+    void sourceFormat;
+  } catch {
+    bytes = Buffer.from(formatRootConfig(result.doc), "utf8");
+  }
+  const newSha = bytesHashString(stableStringify(docForWrite));
   const installedPointers = [...previousPointers];
   for (const e of result.applied) {
     const idx = installedPointers.findIndex((p) => p.pointer === e.pointer);
@@ -209,13 +246,13 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     op: "root-config",
     target,
     relPath: detected.relative,
-    bytes: newDocBytes,
+    bytes,
     desiredSha: newSha,
     currentSha: docResult.sha256 ?? null,
     edits,
     pointerRecords: installedPointers,
     format: docResult.format,
-    document: result.doc,
+    document: docForWrite,
     reason: edits.length === 0
       ? "no installer-owned entries missing"
       : `apply ${result.applied.length} / skip ${result.skipped.length}`,

@@ -133,3 +133,196 @@ export function applyOwnedPointers(rootDoc, { pointerEntries = POINTER_ENTRIES, 
   }
   return result;
 }
+
+/*
+ * Synthesise a minimal root opencode.json that contains only the
+ * installer-owned Build-agent permission block. Used when `init` is
+ * asked to create a missing root config.
+ */
+export function synthesizeDefaultRootConfig() {
+  return {
+    $schema: "https://opencode.ai/config.json",
+    agent: {
+      build: {
+        permission: {
+          delivery_inspect: "allow",
+          delivery_issue: "allow",
+          delivery_worktree: "allow",
+          delivery_verify: "deny",
+          delivery_review: "deny",
+          delivery_pr: "allow",
+          delivery_ready: "allow",
+          delivery_merge: "ask",
+          delivery_cleanup: "allow",
+          task: {
+            "delivery-reviewer": "allow",
+            "delivery-verifier": "allow",
+          },
+        },
+      },
+    },
+  };
+}
+
+/*
+ * Format a root opencode document as bytes.
+ *
+ * For new files (no source) we emit clean JSON.
+ * For existing files the planner preserves the source format:
+ * - JSON files: clean `JSON.stringify(doc, null, 2)` (key order
+ *   inherited from the source parser, see parseRootConfigPreservingOrder).
+ * - JSONC files: when no key conflicts are present we preserve
+ *   comments by reading the source via `jsonc-parser`-style logic;
+ *   for now we emit clean JSON when the planner needs to write,
+ *   which loses comments. This is documented and tracked; the
+ *   alternative — comment-preserving rewrite — is planned.
+ *
+ * Callers: `formatRootConfig(value)` for fresh writes; the planner
+ * picks `formatRootConfigPreserving(value, sourceFormat)` when
+ * rewriting an existing file with a known source.
+ */
+export function formatRootConfig(value) {
+  return JSON.stringify(stripSourceOrder(value), null, 2) + "\n";
+}
+
+function stripSourceOrder(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const out = Array.isArray(value) ? [] : {};
+  const order = Array.isArray(value.__sourceOrder__) ? value.__sourceOrder__ : null;
+  const seen = new Set();
+  if (order) {
+    for (const k of order) {
+      if (k === "__sourceOrder__") continue;
+      if (!(k in value)) continue;
+      seen.add(k);
+      out[k] = stripSourceOrder(value[k]);
+    }
+  }
+  for (const k of Object.keys(value)) {
+    if (k === "__sourceOrder__") continue;
+    if (seen.has(k)) continue;
+    out[k] = stripSourceOrder(value[k]);
+  }
+  return out;
+}
+
+/*
+ * Format a value while honoring a stored source order so the
+ * resulting bytes preserve the input key sequence at every level.
+ * The output is technically valid JSON; comments are not preserved.
+ */
+export function formatRootConfigPreserving(value) {
+  return formatRootConfig(value);
+}
+
+/*
+ * Parse a JSON/JSONC document but preserve the order of the
+ * first-seen keys at each level. Used so a round-trip can keep the
+ * original ordering.
+ */
+export function parseRootConfigPreservingOrder(text) {
+  const parser = new RootConfigParser(text);
+  const value = parser.parseValue(0, /*atTop*/ true);
+  const isJsonc = text.includes("//") || text.includes("/*");
+  return { value, format: isJsonc ? "jsonc" : "json" };
+}
+
+class RootConfigParser {
+  constructor(text) {
+    this.text = text;
+    this.pos = 0;
+  }
+  skipWS() {
+    while (this.pos < this.text.length) {
+      const ch = this.text[this.pos];
+      if (ch === " " || ch === "\n" || ch === "\t" || ch === "\r") {
+        this.pos += 1;
+        continue;
+      }
+      if (ch === "/" && this.text[this.pos + 1] === "/") {
+        while (this.pos < this.text.length && this.text[this.pos] !== "\n") this.pos += 1;
+        continue;
+      }
+      if (ch === "/" && this.text[this.pos + 1] === "*") {
+        this.pos += 2;
+        while (this.pos < this.text.length && !(this.text[this.pos] === "*" && this.text[this.pos + 1] === "/")) this.pos += 1;
+        this.pos += 2;
+        continue;
+      }
+      break;
+    }
+  }
+  parseValue(depth, atTop) {
+    this.skipWS();
+    const ch = this.text[this.pos];
+    if (ch === "{") return this.parseObject(depth, atTop);
+    if (ch === "[") return this.parseArray(depth);
+    if (ch === '"') return this.parseString();
+    if (ch === "-" || (ch >= "0" && ch <= "9")) return this.parseNumber();
+    if (this.text.startsWith("true", this.pos)) { this.pos += 4; return true; }
+    if (this.text.startsWith("false", this.pos)) { this.pos += 5; return false; }
+    if (this.text.startsWith("null", this.pos)) { this.pos += 4; return null; }
+    throw new Error(`unexpected token at ${this.pos}: ${this.text.slice(this.pos, this.pos + 8)}`);
+  }
+  parseObject(depth, atTop) {
+    const out = Object.create(null);
+    out.__sourceOrder__ = [];
+    this.pos += 1;
+    while (this.pos < this.text.length) {
+      this.skipWS();
+      if (this.text[this.pos] === "}") { this.pos += 1; return out; }
+      const key = this.parseString();
+      out.__sourceOrder__.push(key);
+      this.skipWS();
+      if (this.text[this.pos] !== ":") throw new Error(`expected : at ${this.pos}`);
+      this.pos += 1;
+      out[key] = this.parseValue(depth + 1, false);
+      this.skipWS();
+      if (this.text[this.pos] === ",") { this.pos += 1; continue; }
+      if (this.text[this.pos] === "}") { this.pos += 1; return out; }
+      throw new Error(`expected , or } at ${this.pos}`);
+    }
+    throw new Error("unterminated object");
+  }
+  parseArray(depth) {
+    const out = [];
+    this.pos += 1;
+    while (this.pos < this.text.length) {
+      this.skipWS();
+      if (this.text[this.pos] === "]") { this.pos += 1; return out; }
+      out.push(this.parseValue(depth + 1, false));
+      this.skipWS();
+      if (this.text[this.pos] === ",") { this.pos += 1; continue; }
+      if (this.text[this.pos] === "]") { this.pos += 1; return out; }
+      throw new Error(`expected , or ] at ${this.pos}`);
+    }
+    throw new Error("unterminated array");
+  }
+  parseString() {
+    if (this.text[this.pos] !== '"') throw new Error(`expected " at ${this.pos}`);
+    this.pos += 1;
+    let out = "";
+    while (this.pos < this.text.length) {
+      const ch = this.text[this.pos];
+      if (ch === "\\") {
+        const next = this.text[this.pos + 1];
+        out += ch + next;
+        this.pos += 2;
+        continue;
+      }
+      if (ch === '"') {
+        this.pos += 1;
+        return JSON.parse('"' + out + '"');
+      }
+      out += ch;
+      this.pos += 1;
+    }
+    throw new Error("unterminated string");
+  }
+  parseNumber() {
+    const start = this.pos;
+    if (this.text[this.pos] === "-") this.pos += 1;
+    while (this.pos < this.text.length && /[0-9.eE+\-]/.test(this.text[this.pos])) this.pos += 1;
+    return Number(this.text.slice(start, this.pos));
+  }
+}

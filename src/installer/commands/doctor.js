@@ -139,13 +139,18 @@ function writeEnvelope({ command, plan, summary, diagnostics, json, exitCode }) 
   }
 }
 
-export async function runDoctor({ rootPath, json }) {
+export async function runDoctor({ rootPath, json, writeOutput = true }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     const issues = ["not in a git repository"];
-    writeEnvelope({ command: "doctor", plan: [], summary: summarise([]), diagnostics: issues, json, exitCode: 2 });
+    const checks = [];
+    const plan = checks.map((c) => ({
+      kind: c.ok ? "noop" : "conflict", op: "check", target: c.name, relPath: c.name, reason: c.detail,
+    }));
+    const summary = summarise(plan);
+    if (writeOutput) writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode: 2 });
     process.exitCode = 2;
-    return { issues, exitCode: 2, plan: [] };
+    return { issues, exitCode: 2, plan, checks };
   }
   const repoRoot = detection.repoRoot;
   const checks = [
@@ -168,7 +173,7 @@ export async function runDoctor({ rootPath, json }) {
   }));
   const summary = summarise(plan);
   const exitCode = issues.length === 0 ? 0 : 1;
-  writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
+  if (writeOutput) writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
   process.exitCode = exitCode;
-  return { issues, exitCode, plan };
+  return { issues, exitCode, plan, checks };
 }

@@ -153,7 +153,11 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
 
 export async function commitInstall(preview, { json, command }) {
   if (!preview.ok) {
-    return exitWith(2, preview.error?.kind ?? "invalid-project", json, command);
+    return {
+      ok: false, command, plan: [], conflicts: [], summary: summarise([]),
+      diagnostics: [preview.error?.kind ?? "invalid-project"],
+      /** @type {any} */ extra: { exitCode: 2, repoRoot: null, migrationReport: null },
+    };
   }
   const { repoRoot, plan, conflicts, migrationReport } = preview;
   const filePlans = plan.filter((op) => op.op === "file");
@@ -161,12 +165,12 @@ export async function commitInstall(preview, { json, command }) {
   const rootPlan = plan.find((op) => op.op === "root-config");
   const fileOnly = filePlans;
   if (conflicts.length > 0) {
-    return emit(command, plan, conflicts, {
+    return {
+      ok: false, command, plan, conflicts,
       summary: summarise(plan),
-      json, exitCode: 3,
       diagnostics: ["hash conflict; refuse to overwrite"],
-      extra: { repoRoot, migrationReport },
-    });
+      /** @type {any} */ extra: { exitCode: 3, repoRoot, migrationReport },
+    };
   }
 
   const newLockObject = await assembleLock({
@@ -206,14 +210,19 @@ export async function commitInstall(preview, { json, command }) {
     newLockBuilder: async () => newLockObject,
   });
   if (!tx.ok) {
-    return exitWith(4, tx.error?.message ?? "transaction failure", json, command);
+    return {
+      ok: false, command, plan, conflicts: [],
+      summary: summarise(plan),
+      diagnostics: [tx.error?.message ?? "transaction failure"],
+      extra: { exitCode: 4, repoRoot, migrationReport, recovered: false },
+    };
   }
-  return emit(command, plan, [], {
+  return {
+    ok: true, command, plan, conflicts: [],
     summary: summarise(plan),
-    json, exitCode: 0,
     diagnostics: [],
-    extra: { repoRoot, migrationReport, recovered: tx.recovered },
-  });
+    extra: { exitCode: 0, repoRoot, migrationReport, recovered: tx.recovered },
+  };
 }
 
 async function stageFiles(filePlan, repoRoot) {
@@ -232,7 +241,7 @@ async function stageFiles(filePlan, repoRoot) {
   return out;
 }
 
-function serializePlan(plan) {
+export function serializePlan(plan) {
   return plan.filter(Boolean).map((op) => {
     if (!op) return null;
     const { bytes, ...rest } = op;

@@ -20,6 +20,8 @@ Options:
   --root <path>          Project root (defaults to cwd).
   --config <path>        Override the config file location (init only).
   --force-config         Rewrite the user config from detection (init only).
+  --force-root-config    Create opencode.json when absent (init only).
+  --strict-doctor        Fail init when doctor reports unhealthy checks.
   --replace-managed      Replace locally-modified managed files (update only).
   --purge-config         Remove ship.config.json when uninstalling.
   --json                 Emit a JSON envelope instead of human output.
@@ -34,6 +36,7 @@ function parseFlags(argv) {
     purgeConfig: false,
     forceConfig: false,
     forceRootConfig: false,
+    strictDoctor: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -42,6 +45,7 @@ function parseFlags(argv) {
     else if (arg === "--purge-config") options.purgeConfig = true;
     else if (arg === "--force-config") options.forceConfig = true;
     else if (arg === "--force-root-config") options.forceRootConfig = true;
+    else if (arg === "--strict-doctor") options.strictDoctor = true;
     else if (arg === "--root") options.rootPath = argv[++i];
     else if (arg === "--config") options.configPath = argv[++i];
     else if (arg === "-h" || arg === "--help") return { help: true };
