@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -39,6 +39,7 @@ jobs:
         run: npm run test:package
 
       - name: pack
+        id: pack
         run: |
           set -euo pipefail
           version="$(node -e 'console.log(require("./package.json").version)')"
@@ -47,6 +48,7 @@ jobs:
           npm pack --pack-destination dist-pkg
           tarball="dist-pkg/opencode-ship-${version}.tgz"
           mv -v "$tarball" "dist-pkg/${tag}.tgz" || cp -v "$tarball" "dist-pkg/${tag}.tgz"
+          echo "package-version=${version}" >> "$GITHUB_OUTPUT"
           echo "tarball=dist-pkg/${tag}.tgz" >> "$GITHUB_OUTPUT"
 
       - name: publish release
@@ -54,7 +56,24 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: opencode-ship ${{ github.ref_name }}
-          generate_release_notes: true
+          body: |
+            ## opencode-ship ${{ steps.pack.outputs.package-version }}
+
+            npm-distributed OpenCode installer and delivery plugin. See
+            `README.md` and `CHANGELOG.md` for the full release notes.
+
+            ### Install
+
+            ```sh
+            pnpm dlx opencode-ship@latest init
+            ```
+
+            Once npm releases this tag, the same command works against the
+            public registry. For tarball-only installs:
+
+            ```sh
+            pnpm dlx --package=https://github.com/Viktorxyz/opencode-ship/releases/download/${{ github.ref_name }}/opencode-ship-${{ steps.pack.outputs.package-version }}.tgz opencode-ship init
+            ```
           files: |
             dist-pkg/${{ github.ref_name }}.tgz
             dist/plugin.js
