@@ -2,7 +2,9 @@
  * Local lifecycle manifest persistence.
  *
  * Manifests live outside the worktree so they survive worktree removal.
- * They are stored under `<git-common-dir>/opencode-delivery/manifests/<taskId>.json`.
+ * They are stored under `<git-common-dir>/opencode-delivery/manifests/<taskId>.json`
+ * (the `opencode-delivery/` directory name is preserved for compatibility with existing
+ * manifests already on consumers' machines).
  */
 
 import { readFile, writeFile, rename, mkdir, readdir, unlink } from "node:fs/promises";

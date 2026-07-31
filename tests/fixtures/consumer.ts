@@ -1,5 +1,5 @@
 /**
- * Consumer-fixture type test for opencode-delivery.
+ * Consumer-fixture type test for opencode-ship.
  *
  * Compiled with `tsc --noEmit -p tests/fixtures/consumer-tsconfig.json`.
  * Fails to typecheck the moment any public value export from

@@ -1,9 +1,17 @@
 {
   "name": "opencode-ship",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "npm-distributed OpenCode installer that materializes the delivery plugin, reviewer/verifier agents, skills, ship config and lock into any consumer repository.",
   "license": "MIT",
+  "homepage": "https://github.com/Viktorxyz/opencode-ship#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Viktorxyz/opencode-ship.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Viktorxyz/opencode-ship/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.6.0",

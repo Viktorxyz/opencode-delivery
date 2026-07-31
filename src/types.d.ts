@@ -1,5 +1,5 @@
 /**
- * Public type declarations for the opencode-delivery package.
+ * Public type declarations for the opencode-ship package.
  *
  * The package ships plain JavaScript ESM sources; this declaration
  * file gives TypeScript consumers the surface they need to typecheck

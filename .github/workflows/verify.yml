@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  delivery-verify:
-    name: delivery-verify
+  opencode-ship-verify:
+    name: opencode-ship-verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

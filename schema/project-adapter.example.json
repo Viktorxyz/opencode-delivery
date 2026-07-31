@@ -1,5 +1,5 @@
 {
-  "$schema": "https://github.com/Viktorxyz/opencode-delivery/schema/project-adapter.schema.json",
+  "$schema": "https://github.com/Viktorxyz/opencode-ship/schema/project-adapter.schema.json",
   "contractVersion": 1,
   "repository": {
     "remote": "origin",
