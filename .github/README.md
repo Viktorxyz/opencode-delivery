@@ -1,4 +1,4 @@
-# opencode-delivery
+# opencode-ship
 
 > Reusable, tech-stack-neutral OpenCode delivery package: issue/worktree/branch lifecycle, typed tools, reviewer/verifier agents, project-adapter contract.
 

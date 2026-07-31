@@ -1,5 +1,5 @@
 /**
- * Project-adapter schema and loader for opencode-delivery.
+ * Project-adapter schema and loader for opencode-ship.
  *
  * The adapter is a JSON document (`delivery.json`) committed in a
  * consumer repo at `.opencode/delivery.json`. It declares the

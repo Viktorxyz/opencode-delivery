@@ -4,5 +4,5 @@ coverage
 *.log
 .DS_Store
 .tmp
-worktrees/
-.opencode-delivery/
+.worktrees/
+.opencode-ship/

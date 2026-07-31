@@ -22,7 +22,7 @@ export function git(cwd, args, env = {}) {
 }
 
 export function makeFixtureRepo(adapterOverrides = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-delivery-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "opencode-ship-test-"));
   git(dir, ["init", "-q", "-b", "main"]);
   git(dir, ["config", "user.email", "test@example.com"]);
   git(dir, ["config", "user.name", "test"]);
