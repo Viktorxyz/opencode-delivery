@@ -114,7 +114,7 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
       path: op.relPath,
       sha256: hash ?? null,
       mode: 0o644,
-      template: entry.source,
+      template: relativeTemplate(entry.source),
       kind: entry.kind,
     });
   }
@@ -183,7 +183,6 @@ export async function commitInstall(preview, { json, command }) {
 
   const txPlan = await stageFiles(fileOnly, repoRoot);
   if (configPlan && (configPlan.kind === "create" || configPlan.kind === "update")) {
-    /** @type {any} */ (configPlan).op = "file";
     txPlan.push({
       op: "file",
       kind: configPlan.kind === "create" ? "create" : "update",
@@ -250,6 +249,13 @@ export function serializePlan(plan) {
     }
     return rest;
   });
+}
+
+function relativeTemplate(source) {
+  if (typeof source !== "string") return source;
+  const prefix = `${process.cwd()}/`;
+  if (source.startsWith(prefix)) return source.slice(prefix.length);
+  return source;
 }
 
 function emit(command, plan, conflicts, { summary, json, exitCode, diagnostics, extra }) {

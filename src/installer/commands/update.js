@@ -6,7 +6,7 @@
  * transaction commits.
  */
 
-import { previewInstall, commitInstall } from "../executor.js";
+import { previewInstall, commitInstall, serializePlan } from "../executor.js";
 
 export async function runUpdate(options) {
   const preview = await previewInstall({
@@ -21,7 +21,24 @@ export async function runUpdate(options) {
   if (preview.conflicts.length > 0 && !options.replaceManaged) {
     return emitFailure(3, "modified managed files; rerun with --replace-managed", options.json, "update");
   }
-  return commitInstall(preview, { json: options.json, command: "update" });
+  const committed = await commitInstall(preview, { json: options.json, command: "update" });
+  if (options.json) {
+    process.stdout.write(JSON.stringify({
+      reportVersion: 1,
+      command: "update",
+      status: committed.extra?.exitCode === 0 ? "ok" : "error",
+      plan: serializePlan(committed.plan ?? []),
+      conflicts: committed.conflicts ?? [],
+      summary: committed.summary ?? {},
+      diagnostics: committed.diagnostics ?? [],
+      exitCode: committed.extra?.exitCode ?? 0,
+      ...(committed.extra ?? {}),
+    }, null, 2) + "\n");
+  } else if (committed.extra?.exitCode === 0) {
+    process.stdout.write(`opencode-ship: update OK\n`);
+  }
+  process.exitCode = committed.extra?.exitCode ?? 0;
+  return committed;
 }
 
 function emitFailure(code, message, json, command) {

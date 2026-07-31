@@ -48,18 +48,20 @@ function readPackageJson(repoRoot) {
   }
 }
 
-function planFromScripts(pkg) {
+function planFromScripts(pkg, packageManager) {
   const scripts = pkg?.scripts ?? {};
+  const runner = packageManager === "npm" ? "npm" : packageManager || "npm";
   const candidate = (name) =>
     typeof scripts[name] === "string" ? scripts[name].trim() : null;
   if (candidate("verify") || candidate("verify:workspace")) {
-    const cmd = candidate("verify:workspace") ?? candidate("verify");
-    return [{ id: "canonical", argv: ["npm", "run", candidate("verify:workspace") ? "verify:workspace" : "verify"], inferredFrom: "verify", command: cmd }];
+    const name = candidate("verify:workspace") ? "verify:workspace" : "verify";
+    const cmd = candidate(name);
+    return [{ id: "canonical", argv: [runner, "run", name], inferredFrom: "verify", command: cmd }];
   }
   const steps = [];
-  if (candidate("typecheck")) steps.push({ id: "typecheck", argv: ["npm", "run", "typecheck"], script: "typecheck" });
-  if (candidate("lint")) steps.push({ id: "lint", argv: ["npm", "run", "lint"], script: "lint" });
-  if (candidate("test")) steps.push({ id: "test", argv: ["npm", "run", "test"], script: "test" });
+  if (candidate("typecheck")) steps.push({ id: "typecheck", argv: [runner, "run", "typecheck"], script: "typecheck" });
+  if (candidate("lint")) steps.push({ id: "lint", argv: [runner, "run", "lint"], script: "lint" });
+  if (candidate("test")) steps.push({ id: "test", argv: [runner, "run", "test"], script: "test" });
   return steps;
 }
 
@@ -151,7 +153,7 @@ export function detectProject(repoRoot = process.cwd()) {
 
   const packageJson = readPackageJson(repoRootActual);
   const packageManager = detectPackageManager(repoRootActual);
-  const verificationPlan = planFromScripts(packageJson);
+  const verificationPlan = planFromScripts(packageJson, packageManager);
   const worktreeBootstrap = bootstrapFor(packageManager);
   const owner = detectOwner(repoRootActual);
 
