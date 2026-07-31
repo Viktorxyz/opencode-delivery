@@ -2,7 +2,7 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.2.0. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. All 143 tests and the packed-artifact smoke check pass under `npm run verify`.
+> **Status:** v0.2.0. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. All 150 tests and the packed-artifact smoke check pass under `npm run verify`.
 
 ---
 
@@ -31,7 +31,7 @@ The package **does not** own:
 
 ## Distribution
 
-Published to npm as `opencode-ship`. Consumers install once with `pnpm dlx` (or `npx`) and never edit the file by hand:
+Once `opencode-ship` is published, consumers install with `pnpm dlx` (or `npx`) and never edit the file by hand:
 
 ```
 pnpm dlx opencode-ship@latest init      # install managed files
@@ -41,7 +41,13 @@ pnpm dlx opencode-ship@latest doctor    # environment and lock audit
 pnpm dlx opencode-ship@latest uninstall # remove only the files still matching the lock
 ```
 
-The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user.
+If you want to try a pre-release tarball locally without publishing to npm:
+
+```bash
+pnpm dlx --package=/absolute/path/opencode-ship-0.2.0.tgz opencode-ship init
+```
+
+The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user. Use `--force-root-config` on `init` to create a minimal `opencode.json` if the consumer has none.
 
 ### Managed file layout
 
@@ -99,16 +105,32 @@ Existing consumers of `opencode-delivery@0.1.x` (commit-pinned shim) can run `pn
 
 ## Development
 
-`npm run verify` runs `format:check`, `lint`, `typecheck`, the build, and the auto-discovered test suite. 143 tests cover lifecycle, drivers, recovery, doctor, agents, the installer CLI, plugin registration, and the packed-artifact smoke test.
+`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. 150 tests cover lifecycle, drivers, recovery, doctor, agents, the installer CLI, plugin registration, the isolated packed-artifact smoke check, and the order-preserving root-config merge.
 
 ```
-npm install
+npm ci
 npm run build
 npm run verify
 ```
+
+The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent.
 
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
 - **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. Subsequent releases follow standard `<major>.<minor>.<patch>` rules.
-- **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5` and OpenCode `>= 1.15.5`.
+- **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5 < 2` and OpenCode `>= 1.15.5`.
+
+## FAQ
+
+**Is the package on npm?**
+
+Not yet. The repository is a draft PR. Once the release workflow lands, the first published tag will produce a GitHub Release tarball and (optionally) an npm release. Until then, install from a local tarball with `pnpm dlx --package=…`.
+
+**Where is the `@opencode-ai/plugin` dependency?**
+
+The plugin is bundled (`scripts/build.mjs` does not externalize it). Consumers do not need to install `@opencode-ai/plugin` themselves; the runtime is self-contained. The package still declares a peer dependency so consumers who also use the opencode runtime are not given duplicate copies.
+
+**What does `init` actually write?**
+
+It writes (or refreshes) the seven managed files in `.opencode/`, the user-owned `ship.config.json`, and the integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so.
