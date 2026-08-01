@@ -16,6 +16,12 @@ import { configPath } from "../config.js";
 export async function runUninstall(options) {
   const preview = await previewUninstall({ rootPath: options.rootPath });
   if (!preview.ok) {
+    if (preview.error?.kind === "unsupported-lock-schema") {
+      return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json);
+    }
+    if (preview.error?.kind === "lock-invalid") {
+      return emitFailure(3, `lock invalid: ${(preview.error.issues ?? []).join("; ")}`, options.json);
+    }
     return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json);
   }
   const { repoRoot, plan, conflicts, summary } = preview;

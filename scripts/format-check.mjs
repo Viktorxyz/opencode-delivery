@@ -17,7 +17,7 @@ async function* walk(dir) {
 
 async function main() {
   let bad = 0;
-  for (const root of ["src", "tests", "scripts", "agents", "skills"]) {
+  for (const root of ["src", "tests", "scripts", "assets"]) {
     let exists = true;
     try {
       await stat(root);

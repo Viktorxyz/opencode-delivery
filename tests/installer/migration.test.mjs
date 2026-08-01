@@ -55,7 +55,7 @@ test("migration: detects the legacy adapter and lock", async (t) => {
   assert.ok(existsSync(join(repoRoot, ".opencode/delivery.json")));
   assert.ok(existsSync(join(repoRoot, ".opencode/plugin/delivery.ts")));
   // New artifacts must be installed.
-  assert.ok(existsSync(join(repoRoot, ".opencode/plugin/opencode-ship.js")));
+  assert.ok(existsSync(join(repoRoot, ".opencode/plugins/opencode-ship.js")));
   assert.ok(existsSync(join(repoRoot, ".opencode/ship.config.json")));
   assert.ok(existsSync(join(repoRoot, ".opencode/ship.lock.json")));
   void readFile;

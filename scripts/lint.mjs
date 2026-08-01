@@ -3,7 +3,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const ROOTS = ["src", "tests", "scripts", "agents", "skills"];
+const ROOTS = ["src", "tests", "scripts", "assets"];
 const EXTS = new Set([".js", ".mjs", ".ts", ".md", ".json"]);
 
 // Files whose content defines the rules themselves, plus documentation,

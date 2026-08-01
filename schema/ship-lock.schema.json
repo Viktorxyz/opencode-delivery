@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Viktorxyz/opencode-delivery/schema/ship-lock.schema.json",
+  "$id": "https://github.com/Viktorxyz/opencode-ship/schema/ship-lock.schema.json",
   "title": "opencode-ship install lock",
   "type": "object",
   "required": ["contractVersion", "manager", "files", "integrity"],

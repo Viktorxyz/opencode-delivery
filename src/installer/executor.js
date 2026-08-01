@@ -15,14 +15,15 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { CATALOG, getTemplateSet } from "./catalog.js";
+import { CATALOG, TEMPLATE_SET_ID } from "./catalog.js";
+import { PACKAGE_VERSION } from "../version.js";
 import {
   planFileInstall,
   planConfigSynthesis,
   planRootConfigApply,
   planUninstall,
 } from "./planner.js";
-import { readLock, writeLock } from "./lock.js";
+import { readValidatedLock, writeLock } from "./lock.js";
 import { loadConfig, writeConfig, renderDefaultConfig } from "./config.js";
 import { bytesHashString } from "./hash.js";
 import { stableStringify } from "./json-pointer.js";
@@ -54,11 +55,19 @@ export async function previewInstall({ rootPath, replaceManaged, forceConfig, fo
     return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
   }
   const repoRoot = detection.repoRoot;
-  const lock = await readLock(repoRoot);
+  const validatedLock = await readValidatedLock(repoRoot);
+  if (validatedLock.kind === "schema") {
+    return { ok: false, error: { kind: "unsupported-lock-schema", issues: validatedLock.issues } };
+  }
+  if (validatedLock.kind === "integrity" || validatedLock.kind === "shape") {
+    return { ok: false, error: { kind: "lock-invalid", issues: validatedLock.issues } };
+  }
+  const lock = validatedLock.lock;
   const migrationReport = await migration({ repoRoot, lock, forceRepair: false });
 
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
+    migrationSeed: migrationReport?.proposedConfigSeed ?? null,
   });
   const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged) });
   const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig) });
@@ -75,9 +84,16 @@ export async function previewUninstall({ rootPath }) {
     return { ok: false, error: { kind: "invalid-project" } };
   }
   const repoRoot = detection.repoRoot;
-  const lock = await readLock(repoRoot);
+  const validatedLock = await readValidatedLock(repoRoot);
+  if (validatedLock.kind === "schema") {
+    return { ok: false, error: { kind: "unsupported-lock-schema", issues: validatedLock.issues } };
+  }
+  if (validatedLock.kind === "integrity" || validatedLock.kind === "shape") {
+    return { ok: false, error: { kind: "lock-invalid", issues: validatedLock.issues } };
+  }
+  const lock = validatedLock.lock;
   if (!lock) {
-    return { ok: true, repoRoot, lock, plan: [], conflicts: [], summary: summarise([]) };
+    return { ok: true, repoRoot, lock: null, plan: [], conflicts: [], summary: summarise([]) };
   }
   const plan = await planUninstall({ repoRoot, lock });
   const conflicts = plan.filter((p) => p.kind === "conflict");
@@ -126,25 +142,30 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
     ? configPlan.desiredSha
     : configPlan?.kind === "noop" ? configPlan.currentSha : null;
   const rootPointers = rootPlan?.pointerRecords ?? lock?.manager?.rootDocuments?.[0]?.pointers ?? [];
+  const hasRootPlan = Boolean(rootPlan?.target || (rootPlan?.pointerRecords && rootPlan.pointerRecords.length > 0));
+  const hasRootDocuments = (rootPlan?.pointerRecords && rootPlan.pointerRecords.length > 0)
+    || (lock?.manager?.rootDocuments && lock.manager.rootDocuments.length > 0);
 
   return {
     contractVersion: 1,
     manager: {
       schemaVersion: 1,
       name: "opencode-ship",
-      version: process.env.OPENCODE_SHIP_VERSION ?? "0.2.0",
-      templateSet: getTemplateSet(),
+      version: process.env.OPENCODE_SHIP_VERSION ?? PACKAGE_VERSION,
+      templateSet: TEMPLATE_SET_ID,
       appliedAt: new Date().toISOString(),
       config: {
         path: ".opencode/ship.config.json",
         sha256: configSha ?? lock?.manager?.config?.sha256 ?? "",
         existed: Boolean(lock?.manager?.config?.existed),
       },
-      rootDocuments: rootPlan?.kind && rootPlan.kind !== "noop" && rootPlan?.target ? [{
-        path: rootPlan.relPath,
-        format: rootPlan.format ?? "json",
-        pointers: rootPointers,
-      }] : (lock?.manager?.rootDocuments ?? []),
+      rootDocuments: hasRootDocuments && (hasRootPlan || (lock?.manager?.rootDocuments?.length ?? 0) > 0) ? [{
+        path: rootPlan?.relPath ?? lock?.manager?.rootDocuments?.[0]?.path ?? "opencode.json",
+        format: rootPlan?.format ?? lock?.manager?.rootDocuments?.[0]?.format ?? "json",
+        pointers: rootPlan?.pointerRecords && rootPlan.pointerRecords.length > 0
+          ? rootPlan.pointerRecords
+          : (lock?.manager?.rootDocuments?.[0]?.pointers ?? []),
+      }] : [],
     },
     files,
     cleanupPending: lock?.cleanupPending ?? [],
@@ -228,7 +249,16 @@ async function stageFiles(filePlan, repoRoot) {
   /** @type {Array<{op:string;kind:string;target:string;bytes?:Buffer;mode?:number;relPath?:string}>} */
   const out = [];
   for (const op of filePlan) {
-    if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge" || op.kind === "delete") continue;
+    if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge") continue;
+    if (op.kind === "delete") {
+      out.push({
+        op: "file",
+        kind: "delete",
+        target: op.target,
+        relPath: op.relPath,
+      });
+      continue;
+    }
     out.push({
       op: "file",
       kind: op.kind,

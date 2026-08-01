@@ -1,46 +1,65 @@
 /*
  * opencode-ship asset catalog.
  *
- * Describes the consumer-managed files opencode-ship needs to install
- * or migrate. The catalog is immutable and ships inside the package;
- * each entry fixes the on-disk path, the source template path inside
- * the published tarball, and the kind used by the lock and the
- * planner.
+ * The catalog is the single source of truth for every managed file
+ * the installer can install, upgrade, downgrade, or remove. Each
+ * entry fixes:
+ *
+ *   - id           a stable string used in lock metadata and tests
+ *   - kind         plugin | agent | skill | support
+ *   - path         the on-disk target inside the consumer repo
+ *   - source       the absolute source path inside this package
+ *   - mode         the unix permission enforced on install
+ *
+ * The catalog is immutable at runtime; `validateCatalog` confirms
+ * every source exists, every path is `.opencode/-rooted`, and every
+ * id is unique so the planner/executor/doctor layers can trust the
+ * table without further validation. The catalog validator runs in
+ * `init`, `diff`, and `update` and refuses to proceed when a source
+ * is missing instead of silently producing an empty file.
  */
 
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { resolve, relative, sep } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { resolvePackageRoot } from "./package-root.js";
+import { PACKAGE_VERSION, TEMPLATE_SET } from "../version.js";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+export { PACKAGE_VERSION };
+export const TEMPLATE_SET_ID = TEMPLATE_SET;
 
-const TEMPLATE_SET = "v0.2.0";
+const packageRoot = resolvePackageRoot(import.meta.url);
 
 export const CATALOG = [
   {
+    id: "plugin:opencode-ship",
     kind: "plugin",
-    path: ".opencode/plugin/opencode-ship.js",
+    path: ".opencode/plugins/opencode-ship.js",
     source: resolve(packageRoot, "dist/plugin.js"),
     mode: 0o644,
   },
   {
+    id: "agent:delivery-reviewer",
     kind: "agent",
     path: ".opencode/agents/delivery-reviewer.md",
     source: resolve(packageRoot, "assets/agents/delivery-reviewer.md"),
     mode: 0o644,
   },
   {
+    id: "agent:delivery-verifier",
     kind: "agent",
     path: ".opencode/agents/delivery-verifier.md",
     source: resolve(packageRoot, "assets/agents/delivery-verifier.md"),
     mode: 0o644,
   },
   {
+    id: "skill:delivery-workflow",
     kind: "skill",
     path: ".opencode/skills/delivery-workflow/SKILL.md",
     source: resolve(packageRoot, "assets/skills/delivery-workflow/SKILL.md"),
     mode: 0o644,
   },
   {
+    id: "skill:planning-research-checkpoint",
     kind: "skill",
     path: ".opencode/skills/planning-research-checkpoint/SKILL.md",
     source: resolve(packageRoot, "assets/skills/planning-research-checkpoint/SKILL.md"),
@@ -48,67 +67,94 @@ export const CATALOG = [
   },
 ];
 
-export const LOCK_RELATIVE = ".opencode/ship.lock.json";
-export const CONFIG_RELATIVE = ".opencode/ship.config.json";
+const ALLOWED_KINDS = new Set(["plugin", "agent", "skill", "support"]);
 
-export function getTemplateSet() {
-  return TEMPLATE_SET;
+export function pluginPath() {
+  return CATALOG.find((entry) => entry.kind === "plugin")?.path ?? ".opencode/plugins/opencode-ship.js";
 }
 
-export const POINTER_ENTRIES = [
-  {
-    pointer: "/agent/build/permission/delivery_inspect",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_issue",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_worktree",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_verify",
-    strategy: "value",
-    value: "deny",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_review",
-    strategy: "value",
-    value: "deny",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_pr",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_ready",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_merge",
-    strategy: "value",
-    value: "ask",
-  },
-  {
-    pointer: "/agent/build/permission/delivery_cleanup",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/task/delivery-reviewer",
-    strategy: "value",
-    value: "allow",
-  },
-  {
-    pointer: "/agent/build/permission/task/delivery-verifier",
-    strategy: "value",
-    value: "allow",
-  },
-];
+/**
+ * Fail-closed catalog validation. Throws when any entry is malformed
+ * or when any source file does not exist on disk. The caller decides
+ * whether to surface this as the installer's exit code 4 (installer
+ * surface) or as a packaging failure (prepack).
+ *
+ * The validator is intentionally strict: silent missing sources have
+ * already produced consumer installs whose managed file was an empty
+ * placeholder (see v0.2.0 lock schema requiring 64-hex hash but the
+ * planner returning null on a missing source). Tight validation here
+ * is the boundary the installer never crosses.
+ */
+export function validateCatalog({ catalog = CATALOG } = {}) {
+  const seenIds = new Set();
+  const seenPaths = new Set();
+  const issues = [];
+
+  for (const entry of catalog) {
+    if (!entry || typeof entry !== "object") {
+      issues.push({ id: null, kind: "shape", message: "catalog entry is not an object" });
+      continue;
+    }
+    const { id, kind, path, source, mode } = entry;
+
+    if (typeof id !== "string" || id.length === 0) {
+      issues.push({ id: null, kind: "id", message: `entry id missing: ${JSON.stringify(entry)}` });
+    } else if (seenIds.has(id)) {
+      issues.push({ id, kind: "duplicate-id", message: `duplicate catalog id: ${id}` });
+    } else {
+      seenIds.add(id);
+    }
+
+    if (typeof path !== "string" || !path.startsWith(".opencode" + sep)) {
+      issues.push({ id, kind: "path", message: `path must be rooted under .opencode/: ${path}` });
+    }
+    if (seenPaths.has(path)) {
+      issues.push({ id, kind: "duplicate-path", message: `duplicate target path: ${path}` });
+    } else {
+      seenPaths.add(path);
+    }
+
+    if (!ALLOWED_KINDS.has(kind)) {
+      issues.push({ id, kind: "kind", message: `unsupported entry kind: ${kind}` });
+    }
+
+    if (typeof source !== "string" || source.length === 0) {
+      issues.push({ id, kind: "source", message: `source path missing: ${id}` });
+    } else if (!existsSync(source)) {
+      issues.push({ id, kind: "source-missing", message: `source file not found: ${source}` });
+    } else {
+      try {
+        const stats = statSync(source);
+        if (!stats.isFile()) {
+          issues.push({ id, kind: "source-not-file", message: `source is not a regular file: ${source}` });
+        } else if (stats.size === 0) {
+          issues.push({ id, kind: "source-empty", message: `source file is empty: ${source}` });
+        }
+      } catch (e) {
+        issues.push({ id, kind: "source-stat", message: `unable to stat source: ${e?.message ?? e}` });
+      }
+      const rel = relative(packageRoot, source);
+      if (rel.startsWith("..")) {
+        issues.push({ id, kind: "source-out-of-package", message: `source escapes package root: ${source}` });
+      }
+    }
+
+    if (mode !== 0o644) {
+      issues.push({ id, kind: "mode", message: `mode must be 0o644: ${id}` });
+    }
+  }
+
+  if (issues.length > 0) {
+    const summary = issues.map((i) => i.message).join("; ");
+    const err = new Error(`opencode-ship catalog validation failed: ${summary}`);
+    /** @type {any} */ (err).issues = issues;
+    /** @type {any} */ (err).catalogValidation = true;
+    throw err;
+  }
+  return catalog;
+}
+
+// Validate from the installer's dispatch boundary. The CLI commands
+// (`init`, `diff`, `update`) and `prepack` invoke `validateCatalog()`
+// before any filesystem change so a broken package state surfaces as
+// the installer's exit code 4 rather than as an empty managed file.

@@ -6,3 +6,4 @@ coverage
 .tmp
 .worktrees/
 .opencode-ship/
+tsconfig.dts.json

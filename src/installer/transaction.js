@@ -1,17 +1,23 @@
 /*
  * Multi-file transaction executor.
  *
- * Best-effort atomic updates with recoverable journal. Each operation:
- *   1. acquires an exclusive lock file under `.git/opencode-ship/.txn.lock`;
- *   2. snapshots original bytes and mode into the journal entry;
- *   3. writes to a sibling temporary file, `fsync`s, then renames;
- *   4. updates the journal after each operation so a recovery can
- *      recreate the pre-image;
- *   5. fsyncs the parent directory.
+ * Best-effort atomic updates with a recoverable journal. For each
+ * file operation the executor:
  *
- * The lock file is committed last (not part of the journal) by
- * `writeLock`. The journal itself is the recovery artifact; it is
- * unlinked when the transaction commits successfully.
+ *   1. acquires an exclusive lock file under the git common dir;
+ *   2. snapshots the original file into a sibling backup file;
+ *   3. writes the new bytes to a sibling temporary file and fsyncs;
+ *   4. records both backup and staged paths in the journal;
+ *   5. renames the original to a backup, then promotes the staged
+ *      file into place, then fsyncs the parent directory;
+ *   6. promotes the new lock last as the commit marker.
+ *
+ * On commit success the journal and every backup/staged file are
+ * removed. On a rollback (caught exception), the executor walks the
+ * journal in reverse, restores the original bytes from the backup,
+ * removes the staged file, and deletes the journal. On startup the
+ * same recovery walk runs against any leftover journal so a
+ * process crash mid-transaction is recovered automatically.
  */
 
 import {
@@ -48,9 +54,21 @@ function journalPath(repoRoot, txnId) {
   return resolve(lockDir(repoRoot), `.txn-${txnId}.journal`);
 }
 
+function backupPath(target, token) {
+  return `${target}.txn-${token}-backup`;
+}
+
+function stagedPath(target, token) {
+  return `${target}.txn-${token}-staged`;
+}
+
+async function mkdirp(path) {
+  await mkdir(path, { recursive: true });
+}
+
 async function acquireLock(repoRoot, txnId) {
   const dir = lockDir(repoRoot);
-  await mkdir(dir, { recursive: true });
+  await mkdirp(dir);
   await writeFile(
     transactionLockPath(repoRoot),
     JSON.stringify({ pid: process.pid, txnId, startedAt: new Date().toISOString() }),
@@ -90,7 +108,14 @@ function asMode(mode) {
 }
 
 async function writeJournal(repoRoot, txnId, journal) {
-  await writeFile(journalPath(repoRoot, txnId), JSON.stringify(journal, null, 2), "utf8");
+  const json = { ...journal, ledger: journal.entries.map((entry) => ({
+    op: entry.op,
+    target: entry.target,
+    backup: entry.backup ?? null,
+    staged: entry.staged ?? null,
+    mode: entry.mode ?? null,
+  })) };
+  await writeFile(journalPath(repoRoot, txnId), JSON.stringify(json, null, 2), "utf8");
 }
 
 async function clearJournal(repoRoot, txnId) {
@@ -98,43 +123,61 @@ async function clearJournal(repoRoot, txnId) {
   try { await unlink(journalPath(repoRoot, txnId)); } catch { /* ignore */ }
 }
 
+async function readJournal(repoRoot, name) {
+  const path = resolve(lockDir(repoRoot), name);
+  try {
+    const raw = await readFile(path, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 async function recover(repoRoot) {
   const dir = lockDir(repoRoot);
-  if (!existsSync(dir)) return { recovered: false };
+  if (!existsSync(dir)) return { recovered: false, recoveredCount: 0 };
   const { readdir } = await import("node:fs/promises");
   const names = await readdir(dir).catch(() => []);
   const journals = names.filter((n) => n.startsWith(".txn-") && n.endsWith(".journal"));
-  if (!journals.length) return { recovered: false };
+  if (!journals.length) return { recovered: false, recoveredCount: 0 };
   let totalRecovered = 0;
   for (const name of journals) {
-    let payload;
-    try {
-      const raw = await readFile(resolve(dir, name), "utf8");
-      payload = JSON.parse(raw);
-    } catch {
+    const journal = await readJournal(repoRoot, name);
+    if (!journal) {
       await unlink(resolve(dir, name)).catch(() => null);
       continue;
     }
-    const journal = payload;
-    for (const entry of [...(journal.entries ?? [])].reverse()) {
-      if (entry.op !== "promote") continue;
-      if (entry.original) {
-        try {
-          await writeFile(entry.target, entry.original.bytes, { mode: entry.original.mode ?? 0o644 });
-        } catch { /* ignore */ }
-      } else if (entry.staged) {
-        try {
-          await rename(entry.staged, entry.target);
-        } catch {
-          try { await unlink(entry.staged); } catch { /* ignore */ }
+    for (const entry of [...(journal.ledger ?? [])].reverse()) {
+      try {
+        if (entry.op === "write") {
+          if (entry.backup && existsSync(entry.backup)) {
+            await rename(entry.backup, entry.target);
+          } else if (entry.staged && existsSync(entry.staged)) {
+            await unlink(entry.staged);
+          }
+        } else if (entry.op === "delete") {
+          if (entry.backup && existsSync(entry.backup)) {
+            await rename(entry.backup, entry.target);
+          }
         }
-      }
+      } catch { /* ignore */ }
     }
     await unlink(resolve(dir, name)).catch(() => null);
     totalRecovered += 1;
   }
   await releaseLock(repoRoot);
   return { recovered: totalRecovered > 0, recoveredCount: totalRecovered };
+}
+
+async function commitEntry(entry) {
+  if (entry.op === "write") {
+    if (entry.backup && existsSync(entry.backup)) {
+      await unlink(entry.backup);
+    }
+  }
+  if (entry.staged && existsSync(entry.staged)) {
+    await unlink(entry.staged);
+  }
 }
 
 export async function executePlan({ repoRoot, plan, newLockBuilder }) {
@@ -154,33 +197,28 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
       if (op.op !== "file") continue;
       if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge") continue;
 
-      const original = await captureOriginal(op.target);
+      const token = randomToken();
+      const backup = backupPath(op.target, token);
+      const staged = stagedPath(op.target, token);
 
       if (op.kind === "delete") {
         if (!existsSync(op.target)) continue;
-        const backup = `${op.target}.txn-${randomToken()}-backup`;
         await rename(op.target, backup);
         journal.entries.push({
-          op: "promote",
-          target: op.target,
-          staged: backup,
-          original,
-          kind: "delete",
+          op: "delete", target: op.target, backup, staged: null, mode: asMode(op.mode),
         });
       } else {
-        const tempPath = `${op.target}.txn-${randomToken()}`;
-        await mkdir(dirname(op.target), { recursive: true });
-        await writeFile(tempPath, op.bytes ?? Buffer.alloc(0), { mode: asMode(op.mode) });
-        const h = await open(tempPath, "r+");
+        await mkdirp(dirname(op.target));
+        if (existsSync(op.target)) {
+          await rename(op.target, backup);
+        }
+        await writeFile(staged, op.bytes ?? Buffer.alloc(0), { mode: asMode(op.mode) });
+        const h = await open(staged, "r+");
         await h.sync();
         await h.close();
-        await rename(tempPath, op.target);
+        await rename(staged, op.target);
         journal.entries.push({
-          op: "promote",
-          target: op.target,
-          staged: tempPath,
-          original,
-          kind: op.kind,
+          op: "write", target: op.target, backup: existsSync(backup) ? backup : null, staged: null, mode: asMode(op.mode),
         });
       }
       await fsyncDir(dirname(op.target));
@@ -192,16 +230,15 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
       const { writeLock: writer } = await import("./lock.js");
       const lockPathTarget = `${repoRoot}/.opencode/ship.lock.json`;
       journal.entries.push({
-        op: "promote",
-        target: lockPathTarget,
-        staged: lockPathTarget,
-        original: await captureOriginal(lockPathTarget),
-        kind: "lock",
+        op: "write", target: lockPathTarget, backup: null, staged: null, mode: 0o644,
       });
       await writer(repoRoot, lockValue);
       await writeJournal(repoRoot, txnId, journal);
     }
 
+    for (const entry of journal.entries) {
+      await commitEntry(entry);
+    }
     await clearJournal(repoRoot, txnId);
     return { ok: true, txnId, recovered: recovered.recovered ?? false, recoveredCount: recovered.recoveredCount ?? 0 };
   } catch (e) {
@@ -213,23 +250,17 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
 }
 
 async function rollback(repoRoot, journal) {
-  for (const entry of [...(journal.entries ?? [])].reverse()) {
-    if (entry.op !== "promote") continue;
-    if (entry.original) {
-      try {
-        await writeFile(entry.target, entry.original.bytes, { mode: entry.original.mode ?? 0o644 });
-      } catch { /* ignore */ }
-    } else if (entry.staged) {
-      try {
-        await rename(entry.staged, entry.target);
-      } catch {
-        try { await unlink(entry.staged); } catch { /* ignore */ }
+  for (const entry of [...(journal.ledger ?? [])].reverse()) {
+    if (entry.op === "delete") {
+      if (entry.backup && existsSync(entry.backup)) {
+        try { await rename(entry.backup, entry.target); } catch { /* ignore */ }
       }
-    } else {
-      try { await unlink(entry.target); } catch { /* ignore */ }
-    }
-    if (entry.staged && entry.staged !== entry.target && existsSync(entry.staged)) {
-      try { await unlink(entry.staged); } catch { /* ignore */ }
+    } else if (entry.op === "write") {
+      if (entry.backup && existsSync(entry.backup)) {
+        try { await rename(entry.backup, entry.target); } catch { /* ignore */ }
+      } else if (entry.target && existsSync(entry.target)) {
+        try { await unlink(entry.target); } catch { /* ignore */ }
+      }
     }
   }
   if (journal.txnId) await clearJournal(repoRoot, journal.txnId);

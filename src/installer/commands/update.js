@@ -7,8 +7,17 @@
  */
 
 import { previewInstall, commitInstall, serializePlan } from "../executor.js";
+import { validateCatalog } from "../catalog.js";
 
 export async function runUpdate(options) {
+  try {
+    validateCatalog();
+  } catch (e) {
+    if (e?.catalogValidation) {
+      return emitFailure(4, `catalog validation failed: ${e.message}`, options.json, "update");
+    }
+    throw e;
+  }
   const preview = await previewInstall({
     rootPath: options.rootPath,
     replaceManaged: options.replaceManaged,
@@ -16,6 +25,12 @@ export async function runUpdate(options) {
     forceRootConfig: options.forceRootConfig,
   });
   if (!preview.ok) {
+    if (preview.error?.kind === "unsupported-lock-schema") {
+      return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json, "update");
+    }
+    if (preview.error?.kind === "lock-invalid") {
+      return emitFailure(3, `lock invalid: ${(preview.error.issues ?? []).join("; ")}`, options.json, "update");
+    }
     return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json, "update");
   }
   if (preview.conflicts.length > 0 && !options.replaceManaged) {

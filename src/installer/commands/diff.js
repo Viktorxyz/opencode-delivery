@@ -6,6 +6,7 @@
  */
 
 import { previewInstall } from "../executor.js";
+import { validateCatalog } from "../catalog.js";
 
 function summarise(plan) {
   const counts = { create: 0, update: 0, noop: 0, delete: 0, conflict: 0, converge: 0, lock: 0, config: 0, rootConfig: 0 };
@@ -31,6 +32,24 @@ function serializePlan(plan) {
 }
 
 export async function runDiff(options) {
+  try {
+    validateCatalog();
+  } catch (e) {
+    if (e?.catalogValidation) {
+      if (options.json) {
+        process.stdout.write(JSON.stringify({
+          reportVersion: 1, command: "diff", status: "error",
+          plan: [], conflicts: [], summary: { create: 0, update: 0, noop: 0, delete: 0, conflict: 0, converge: 0 },
+          diagnostics: [`catalog validation failed: ${e.message}`], exitCode: 4,
+        }, null, 2) + "\n");
+      } else {
+        process.stdout.write(`opencode-ship: catalog validation failed: ${e.message}\n`);
+      }
+      process.exitCode = 4;
+      return { ok: false, exitCode: 4 };
+    }
+    throw e;
+  }
   const preview = await previewInstall({
     rootPath: options.rootPath ?? null,
     replaceManaged: false,
@@ -38,18 +57,25 @@ export async function runDiff(options) {
     forceRootConfig: false,
   });
   if (!preview.ok) {
+    const exitCode = preview.error?.kind === "unsupported-lock-schema" ? 5
+      : preview.error?.kind === "lock-invalid" ? 3 : 2;
+    const message = preview.error?.kind === "lock-invalid"
+      ? `lock invalid: ${(preview.error.issues ?? []).join("; ")}`
+      : preview.error?.kind === "unsupported-lock-schema"
+        ? `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`
+        : preview.error?.kind ?? "invalid-project";
     if (options.json) {
       process.stdout.write(JSON.stringify({
         reportVersion: 1, command: "diff", status: "error",
         plan: [], conflicts: [], summary: { create: 0, update: 0, noop: 0, delete: 0, conflict: 0, converge: 0 },
-        diagnostics: [preview.error?.kind ?? "invalid-project"],
-        exitCode: 2,
+        diagnostics: [message],
+        exitCode,
       }, null, 2) + "\n");
     } else {
-      process.stdout.write(`opencode-ship: ${preview.error?.kind ?? "invalid-project"}\n`);
+      process.stdout.write(`opencode-ship: ${message}\n`);
     }
-    process.exitCode = 2;
-    return { ok: false, exitCode: 2 };
+    process.exitCode = exitCode;
+    return { ok: false, exitCode };
   }
   const { plan, conflicts, migrationReport } = preview;
   const summary = summarise(plan);

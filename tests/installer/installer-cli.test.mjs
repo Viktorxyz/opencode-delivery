@@ -34,7 +34,7 @@ test("init: creates all managed files on a fresh project", async (t) => {
   const r = await runInit(repoRoot);
   assert.equal(r.code, 0, JSON.stringify(r, null, 2));
   for (const p of [
-    ".opencode/plugin/opencode-ship.js",
+    ".opencode/plugins/opencode-ship.js",
     ".opencode/agents/delivery-reviewer.md",
     ".opencode/agents/delivery-verifier.md",
     ".opencode/skills/delivery-workflow/SKILL.md",
@@ -77,7 +77,7 @@ test("init: writes a lock whose content matches the plugin bytes", async (t) => 
   t.after(async () => cleanProject(parent));
   await runInit(repoRoot);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
-  const plugin = lock.files.find((f) => f.path === ".opencode/plugin/opencode-ship.js");
+  const plugin = lock.files.find((f) => f.path === ".opencode/plugins/opencode-ship.js");
   const shipped = readFileSync(join(PKG_ROOT, "dist/plugin.js"), "utf8");
   assert.equal(plugin.sha256, hashOf(shipped));
 });
@@ -107,7 +107,7 @@ test("uninstall: removes managed files that still match the lock", async (t) => 
   const r = cli(repoRoot, ["uninstall", "--json"]);
   assert.equal(r.code, 0, r.stderr);
   for (const p of [
-    ".opencode/plugin/opencode-ship.js",
+    ".opencode/plugins/opencode-ship.js",
     ".opencode/agents/delivery-reviewer.md",
   ]) {
     assert.ok(!existsSync(join(repoRoot, p)), `${p} should be removed`);

@@ -1,11 +1,12 @@
 // Build the opencode-ship plugin and CLI bundles.
 import { build } from "esbuild";
-import { mkdir, writeFile, readFile, copyFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = dirname(fileURLToPath(import.meta.url)) + "/..";
+const tmpRoot = resolve(root, ".tmp");
 
 async function readPackage() {
   const raw = await readFile(resolve(root, "package.json"), "utf8");
@@ -66,13 +67,13 @@ async function bundleCli(pkg) {
 /**
  * Emit self-contained `.d.ts` files for the public API surfaces.
  *
- * We use a temporary `tsconfig.dts.json` that points at the entry
- * declaration files in `src/` and emits only `.d.ts` output into
- * `dist/` directly. The emitted files are self-contained: each
- * entry-point `.d.ts` only references types reachable through its
- * own declaration files, not `src/types.d.ts` or `src/`.
+ * The temporary `tsconfig.dts.json` is created under `.tmp/` (which
+ * is in `.gitignore`) instead of at the repo root, so a tracked
+ * `tsconfig.dts.json` is never accidentally created or left behind
+ * by a failed run.
  */
 async function emitDeclarations() {
+  await mkdir(tmpRoot, { recursive: true });
   const tsconfig = {
     compilerOptions: {
       target: "ES2022",
@@ -93,7 +94,7 @@ async function emitDeclarations() {
       resolve(root, "src/core.ts"),
     ],
   };
-  const tsconfigPath = resolve(root, "tsconfig.dts.json");
+  const tsconfigPath = resolve(tmpRoot, "tsconfig.dts.json");
   await writeFile(tsconfigPath, JSON.stringify(tsconfig, null, 2), "utf8");
 
   const tscBin = resolve(root, "node_modules/.bin/tsc");
@@ -101,6 +102,8 @@ async function emitDeclarations() {
     encoding: "utf8",
     stdio: ["ignore", "inherit", "inherit"],
   });
+  // Always clean the temporary config, even on failure.
+  await rm(tsconfigPath, { force: true });
   if (r.status !== 0) {
     throw new Error(`tsc --emitDeclarationOnly failed with exit ${r.status}`);
   }
@@ -113,9 +116,12 @@ async function main() {
   await bundleCore(pkg);
   await bundleCli(pkg);
   await emitDeclarations();
+  // Best-effort cleanup; the directory is recreated on every run.
+  await rm(tmpRoot, { recursive: true, force: true });
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error(e);
+  await rm(tmpRoot, { recursive: true, force: true }).catch(() => null);
   process.exit(1);
 });

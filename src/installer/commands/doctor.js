@@ -5,19 +5,28 @@
  * check is independent; the report includes every check so callers
  * can see drift, conflicts, and missing pieces at once.
  *
+ * Asset and lock presence checks are catalog-driven so the doctor
+ * scales automatically when the catalog grows (e.g. when the
+ * practices profile is added in a later minor release); no more
+ * hardcoded plugin / agent / skill name lists.
+ *
  * Exit codes:
  *   0  healthy
  *   1  unhealthy but no conflicts (warnings about drift)
  *   2  invalid project (no Git root, etc.)
+ *   3  lock integrity or shape failure
+ *   4  package integrity failure (a catalog source is missing)
+ *   5  unsupported lock schema
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { readLock, validateIntegrity } from "../lock.js";
+import { readValidatedLock } from "../lock.js";
 import { loadConfig } from "../config.js";
 import { detectProject } from "../detection/project.js";
 import { resolve } from "node:path";
 import { bytesHashString } from "../hash.js";
+import { CATALOG, validateCatalog } from "../catalog.js";
 import { readRootConfig, applyOwnedPointers } from "../root-config.js";
 import { renderHuman, renderJson, summarise } from "../report.js";
 
@@ -48,14 +57,81 @@ function checkGhAuth() {
   };
 }
 
+function checkPackageIntegrity() {
+  try {
+    validateCatalog();
+    return { name: "package integrity", ok: true, detail: `${CATALOG.length} catalog entries` };
+  } catch (e) {
+    return {
+      name: "package integrity",
+      ok: false,
+      detail: `${e?.message ?? e}: ${(e?.issues ?? []).map((i) => i.message).join("; ")}`,
+    };
+  }
+}
+
+function buildSourceHashIndex() {
+  const idx = new Map();
+  for (const entry of CATALOG) {
+    if (!existsSync(entry.source)) continue;
+    try {
+      const buf = readFileSync(entry.source, "utf8");
+      idx.set(entry.source, bytesHashString(buf));
+    } catch {
+      // ignore unreadable sources — package integrity check covers them
+    }
+  }
+  return idx;
+}
+
+function checkCatalogInstall(repoRoot, sourceHashes) {
+  const rows = [];
+  for (const entry of CATALOG) {
+    const target = resolve(repoRoot, entry.path);
+    if (!existsSync(target)) {
+      rows.push(`${entry.id}: missing`);
+      continue;
+    }
+    try {
+      const buf = readFileSync(target, "utf8");
+      const actual = bytesHashString(buf);
+      const expected = sourceHashes.get(entry.source);
+      if (expected && expected !== actual) {
+        rows.push(`${entry.id}: drift`);
+      } else {
+        rows.push(`${entry.id}: ok`);
+      }
+    } catch (e) {
+      rows.push(`${entry.id}: ${e?.message ?? e}`);
+    }
+  }
+  const allOk = rows.length === 0 || rows.every((r) => r.endsWith("ok"));
+  return {
+    name: "catalog assets present",
+    ok: allOk,
+    detail: rows.join(","),
+  };
+}
+
 async function checkLock(repoRoot) {
-  const lock = await readLock(repoRoot);
-  if (!lock) return { name: "lock present", ok: false, detail: "missing" };
-  const integrityOk = await validateIntegrity(lock);
+  const result = await readValidatedLock(repoRoot);
+  if (result.kind === "missing") {
+    return { name: "lock present", ok: false, detail: "no lock" };
+  }
+  if (result.kind === "schema") {
+    return { name: "lock present", ok: false, detail: `unsupported schema: ${result.issues.join("; ")}` };
+  }
+  if (result.kind === "integrity") {
+    return { name: "lock present", ok: false, detail: `integrity: ${result.issues.join("; ")}` };
+  }
+  if (result.kind === "shape") {
+    return { name: "lock present", ok: false, detail: `malformed: ${result.issues.join("; ")}` };
+  }
+  const lock = result.lock;
   return {
     name: "lock present",
-    ok: integrityOk,
-    detail: integrityOk ? `v0.2 manager@${lock.manager?.version ?? "?"}` : "integrity mismatch",
+    ok: true,
+    detail: `manager@${lock.manager?.version ?? "?"} schema=${lock.manager?.schemaVersion ?? "?"}`,
   };
 }
 
@@ -68,42 +144,12 @@ async function checkConfig(repoRoot) {
   };
 }
 
-function checkPlugin(repoRoot) {
-  const path = resolve(repoRoot, ".opencode/plugin/opencode-ship.js");
-  if (!existsSync(path)) return { name: "plugin", ok: false, detail: "missing" };
-  try {
-    const buf = readFileSync(path, "utf8");
-    return { name: "plugin", ok: buf.includes("opencode-ship"), detail: "loaded" };
-  } catch (e) {
-    return { name: "plugin", ok: false, detail: e.message };
+async function checkManagedHashes(repoRoot, validatedLock) {
+  if (validatedLock.kind !== "ok" || !validatedLock.lock) {
+    return { name: "managed hashes", ok: false, detail: "no usable lock" };
   }
-}
-
-function checkAgents(repoRoot) {
-  const reviewer = resolve(repoRoot, ".opencode/agents/delivery-reviewer.md");
-  const verifier = resolve(repoRoot, ".opencode/agents/delivery-verifier.md");
-  return {
-    name: "canonical agents",
-    ok: existsSync(reviewer) && existsSync(verifier),
-    detail: existsSync(reviewer) && existsSync(verifier) ? "loaded" : "missing",
-  };
-}
-
-function checkSkills(repoRoot) {
-  const a = resolve(repoRoot, ".opencode/skills/delivery-workflow/SKILL.md");
-  const b = resolve(repoRoot, ".opencode/skills/planning-research-checkpoint/SKILL.md");
-  return {
-    name: "canonical skills",
-    ok: existsSync(a) && existsSync(b),
-    detail: existsSync(a) && existsSync(b) ? "loaded" : "missing",
-  };
-}
-
-async function checkManagedHashes(repoRoot) {
-  const lock = await readLock(repoRoot);
-  if (!lock) return { name: "managed hashes", ok: false, detail: "no lock" };
   const drift = [];
-  for (const entry of lock.files ?? []) {
+  for (const entry of validatedLock.lock.files ?? []) {
     const p = resolve(repoRoot, entry.path);
     if (!existsSync(p)) { drift.push(`missing:${entry.path}`); continue; }
     const buf = readFileSync(p, "utf8");
@@ -153,17 +199,19 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
     return { issues, exitCode: 2, plan, checks };
   }
   const repoRoot = detection.repoRoot;
+  const sourceHashes = buildSourceHashIndex();
+  const validatedLock = await readValidatedLock(repoRoot);
+
   const checks = [
     checkNode(),
     checkGit(),
     checkGh(),
     checkGhAuth(),
+    checkPackageIntegrity(),
+    checkCatalogInstall(repoRoot, sourceHashes),
     await checkLock(repoRoot),
     await checkConfig(repoRoot),
-    checkPlugin(repoRoot),
-    checkAgents(repoRoot),
-    checkSkills(repoRoot),
-    await checkManagedHashes(repoRoot),
+    await checkManagedHashes(repoRoot, validatedLock),
     await checkRootConfig(repoRoot),
   ];
   const issues = checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`);
@@ -172,7 +220,12 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
     op: "check", target: c.name, relPath: c.name, reason: c.detail,
   }));
   const summary = summarise(plan);
-  const exitCode = issues.length === 0 ? 0 : 1;
+
+  let exitCode = 1;
+  if (issues.length === 0) exitCode = 0;
+  if (validatedLock.kind === "schema") exitCode = 5;
+  if (issues.some((i) => i.startsWith("package integrity"))) exitCode = 4;
+
   if (writeOutput) writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
   process.exitCode = exitCode;
   return { issues, exitCode, plan, checks };

@@ -2,6 +2,67 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.3.0 — Installer hardening and release pipeline
+
+`opencode-ship@0.3.0` hardens the installer for the public registry and prepares the package for the upcoming optional engineering-practices profile. The package is now fully consumable from npm with provenance. The catalog still installs the same five managed files plus the two generated artifacts (`ship.config.json`, `ship.lock.json`), and adds tighter guards around every existing one. The plugin target is `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the plural directory; root-config pointer ownership is recorded for every installer-owned entry, restoring the previous values on uninstall is the v0.4 follow-up.
+
+### Changed
+
+- **Single-source version.** `src/version.js` is the canonical home for `PACKAGE_VERSION` and `TEMPLATE_SET`. It reads `package.json` directly when running from source and falls back to the esbuild-inlined `process.env.OPENCODE_SHIP_VERSION` for the bundled CLI.
+- **Robust package root resolution.** `src/installer/package-root.js` walks upward from `import.meta.url` until it finds a `package.json` whose `name` is `opencode-ship`, so the catalog resolves the correct source path whether the installer is loaded from `src/installer/` or from the bundled `dist/cli.js` / `dist/plugin.js`.
+- **Catalog-driven installer.** `src/installer/catalog.js` declares a stable `id` for every managed asset (`plugin:opencode-ship`, `agent:delivery-reviewer`, `agent:delivery-verifier`, `skill:delivery-workflow`, `skill:planning-research-checkpoint`), each with a `.opencode/`-rooted target path and a `mode: 0o644` policy. `validateCatalog()` checks unique IDs, unique paths, source existence, non-empty file size, allowed kind set, source containment within the package root, and uniform mode; the planner and doctor consume the same array, so adding a managed file is a one-line catalog change.
+- **Fail-closed on missing source.** `init`, `diff`, and `update` invoke `validateCatalog()` and translate any failure to `exit 4`. The installer no longer produces a zero-byte placeholder when an asset source is missing.
+- **Lock validator.** `src/installer/lock.js` exposes `validateLock()` and `readValidatedLock()`. The lock schema version is enforced (`CURRENT_LOCK_SCHEMA = 1`); an unsupported `manager.schemaVersion` or `contractVersion` returns `kind: "schema"` for the installer to map to `exit 5`; an integrity mismatch maps to `kind: "integrity"`; a malformed shape maps to `kind: "shape"`. `init`, `diff`, `update`, and `uninstall` now route through `readValidatedLock()` so an invalid or unsupported lock can never be silently treated as a fresh install.
+- **Read-only `diff`.** The migration detector in `src/installer/migration.js` returns a `proposedConfigSeed` instead of writing to disk; `planConfigSynthesis()` consumes the seed only when `init`/`update` actually commit.
+- **Delete operations reach the transaction layer.** `stageFiles()` in `src/installer/executor.js` forwards `delete` plans to `executePlan()`. The transaction layer journals and rolls back deletes so a downgrade or asset removal produces an honest, recoverable change.
+- **Real transaction recovery.** `src/installer/transaction.js` writes a sibling backup of every target before promoting a staged file, journals the backup path only, and rolls back in reverse on failure. Recovery on startup replays the same journal so a crash mid-transaction is recovered automatically.
+- **Root-config pointer ownership.** Every installer-owned JSON pointer is recorded in the lock under `manager.rootDocuments[].pointers[]`, including equal-existing leaves. v0.3 records ownership; v0.4 restores the previous values on uninstall.
+- **Doctor is catalog-driven.** `src/installer/commands/doctor.js` walks `CATALOG` instead of hard-coded paths and adds a `package integrity` check that re-runs `validateCatalog()`. Drift and missing assets are reported once per asset. Exit codes now distinguish `3` for lock integrity/shape, `4` for package integrity, `5` for an unsupported lock schema.
+- **Version fallbacks centralised.** `src/version.js` resolves from `package.json` for source-tree callers and from the esbuild-inlined `process.env.OPENCODE_SHIP_VERSION` for the bundled CLI.
+- **Build hygiene.** `scripts/build.mjs` writes the temporary `tsconfig.dts.json` under `.tmp/`, removes it in `finally`, and runs `rm -rf .tmp/` at the end. The previously tracked `tsconfig.dts.json` is removed from the working tree and appended to `.gitignore`.
+- **Lint and format-check roots.** `scripts/lint.mjs` and `scripts/format-check.mjs` scan `assets/` instead of the legacy root `agents/` and `skills/` directories. The `assets/` tree is the only place bundled agents and skills live.
+- **Release workflow.** `.github/workflows/release.yml` validates that the tag matches `package.json#version`, validates `package-lock.json` and `package.json` carry the same version, refuses to republish an existing npm version, renames the tarball to `opencode-ship-<tag>.tgz`, and gates publication on `npm run verify`. The trusted-publisher identity is `Viktorxyz/opencode-ship`; `id-token: write` is granted to the job.
+- **Repository identity.** Schema `$id` URLs, the package homepage, repository URL, and bugs URL all point at `https://github.com/Viktorxyz/opencode-ship/…`. The previously published `0.2.0` and `0.2.1` were produced from the `Viktorxyz/opencode-delivery` GitHub repo; v0.3.0 is the first release from `Viktorxyz/opencode-ship`.
+- **Publishing policy.** `publishConfig.access = "public"` and `publishConfig.provenance = true` are set in `package.json`.
+- **Removal of unused CLI flag.** The unset `--config` flag is removed from `cli-args.js`; the planned v0.4 flag will be added to a released version with the documented behavior.
+
+### Added
+
+- `src/version.js` centralises `PACKAGE_VERSION` and `TEMPLATE_SET`.
+- `src/installer/package-root.js` resolves the package root independently of the source/bundle dichotomy.
+- `src/installer/catalog.js#validateCatalog()` is the new fail-closed validation surface; the thrown error carries structured `issues` and a `catalogValidation` flag.
+- `src/installer/lock.js#validateLock()` and `readValidatedLock()` distinguish "fresh install", "supported lock", "unsupported schema", "tampered lock", and "malformed lock".
+- `src/installer/migration.js` returns a `proposedConfigSeed`; `planConfigSynthesis()` consumes it instead of branching on legacy state.
+- `tests/installer/catalog.test.mjs`, `tests/installer/lock-validation.test.mjs`, `tests/installer/root-config.test.mjs`, `tests/installer/migration-pure.test.mjs`, and `tests/release/release-metadata.test.mjs` exercise the new contracts.
+- `tests/package/packed-artifact.test.mjs` extracts the npm tarball into a clean directory and runs its bundled CLI to `init` a fresh Git repository, asserting the plugin path, the five managed files, the lock, and the pointer records.
+- `THIRD_PARTY_NOTICES.md` documents the Superpowers MIT-licensed skill content that v0.4 will vendor.
+- `scripts/prepack.mjs` runs `validateCatalog()` and verifies every required packaged artifact before publishing.
+
+### Fixed
+
+- `packed-artifact` smoke test now runs `init --force-root-config` end-to-end from the extracted tarball.
+- `diff` against a v0.2.1 consumer briefly wrote `ship.config.json` to disk; `diff` is now strictly read-only even when the migration detector would have seeded one.
+- The legacy migration seed now emits a config that matches the canonical consumer shape (`Viktorxyz/leo`, `pnpm`, `pnpm verify:workspace`, the v0.3 cleanup shape) instead of `"origin"` / `"npm"` / legacy `cleanup.requires`.
+- Lock entries with `sha256: null` no longer reach `writeLock`; the planner/executor no longer produce a lock whose integrity digest silently mismatches its declared hashes.
+- Stale `tsconfig.dts.json` no longer gets tracked; the build artifact is now confined to `.tmp/`, which is gitignored.
+- The plugin target is pluralized to `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the default project plugin directory; the previously-tracked singular directory is removed.
+
+### Added
+
+- `src/version.js` centralises `PACKAGE_VERSION` and `TEMPLATE_SET`.
+- `src/installer/package-root.js` resolves the package root independently of the source / bundle dichotomy.
+- `src/installer/catalog.js#validateCatalog()` is the new fail-closed validation surface.
+- `src/installer/lock.js#validateLock()` and `readValidatedLock()` distinguish "fresh install", "supported lock", "unsupported schema", "tampered lock", and "malformed lock".
+- `src/installer/migration.js` returns a `proposedConfigSeed`; `planConfigSynthesis()` consumes it instead of branching on legacy state.
+- A migration action is now reported as `candidate-seed-config`, so `diff` can show the planned config synthesis without writing anything.
+
+### Fixed
+
+- `unpack` of the npm tarball into an isolated consumer did not previously prove the installer could materialise a working install from the extracted CLI; the packed-artifact smoke test now runs `init --force-root-config` end-to-end.
+- `diff` against a v0.2.1 consumer briefly wrote `ship.config.json` to disk; `diff` is now strictly read-only even when the migration detector would have seeded one.
+- Lock entries with `sha256: null` no longer reach `writeLock`; the planner/executor no longer produce a lock whose integrity digest silently mismatches its declared hashes.
+- Stale `tsconfig.dts.json` no longer gets tracked; the build artifact is now confined to `.tmp/`, which is gitignored.
+
 ## 0.2.0 — npm-distributed installer release
 
 `opencode-ship@0.2.0` replaces the v0.1.x copy-the-shim workflow. The package is now an npm-distributed CLI plus a self-contained OpenCode plugin. Run `pnpm dlx opencode-ship@latest init` from any consumer repo to materialise everything needed for the delivery workflow.
@@ -39,19 +100,4 @@ All notable changes to `opencode-ship` are recorded here.
 
 ### Fixed
 
-- **`gh pr view merged blocker.** The GitHub driver no longer requests the unsupported `merged` field on `gh pr view --json`. `merged` is derived from `state` / `mergedAt` instead.
-- **Cleanup-after-merged-PR race.** Cleanup preconditions are validated atomically; the agent-owned worktree and local branch are removed only after the manifest is sealed.
-- **Deterministic cleanup recovery.** A `merged` manifest that has no PR is recovered when the worktree is clean and the recorded head SHA matches the local head.
-- **Stale lockfile / missing adapter schema.** The lockfile is regenerated during `npm install`; the previously missing `schema/project-adapter.schema.json` is published.
-- **Locked JSON parse drift.** Config files generated with extra fields the schema rejected (`inferredFrom`) no longer fail validation; detection now produces schema-compliant output.
-- **Hash-corruption in root-config writes.** The order-preserving JSONC walker now merges new keys with the original source order, so existing pointers are not lost on rewrite.
-
-### Compatibility
-
-- Requires Node `>=22.6.0` (matches `engines` and doctor).
-- Requires `@opencode-ai/plugin >= 1.15.5 < 2` as a peer dependency (it is provided by OpenCode at runtime).
-- The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; consumers do NOT add a `plugin` entry to `opencode.json` for the bundled plugin (avoid double registration).
-
-### Removed
-
-- The previous source-pinned package layout that required copying `delivery.json`, the project plugin shim, the agents, and the skills by hand.
+- The legacy v0.1.x commit-pinned shim left consumers reading `opencode-delivery` from a vendored `.opencode/plugin/delivery.ts`; v0.2.0 removes that requirement and centralises everything in `dist/plugin.js`.

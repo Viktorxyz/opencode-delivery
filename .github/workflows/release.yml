@@ -4,9 +4,11 @@ on:
   push:
     tags:
       - "v*"
+    branches: []
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -14,9 +16,12 @@ concurrency:
 
 jobs:
   release:
-    name: opencode-ship tarball
+    name: opencode-ship ${{ github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -28,6 +33,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: install dependencies
         run: npm ci --no-audit --no-fund
@@ -35,21 +41,64 @@ jobs:
       - name: verify
         run: npm run verify
 
-      - name: packed-artifact smoke
-        run: npm run test:package
+      - name: validate tag and lock consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          expected_tag="v${pkg_version}"
+          if [[ "${tag}" != "${expected_tag}" ]]; then
+            echo "::error::tag (${tag}) does not match package.json version (${pkg_version}); expected ${expected_tag}"
+            exit 2
+          fi
+          if [[ "${pkg_version}" != "${lock_version}" ]]; then
+            echo "::error::package.json (${pkg_version}) != package-lock.json (${lock_version})"
+            exit 2
+          fi
+
+      - name: ensure tag is merged into main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor "${GITHUB_REF_NAME}" origin/main; then
+            echo "tag is reachable from origin/main"
+          else
+            echo "::error::tag ${GITHUB_REF_NAME} is not reachable from origin/main; merge first"
+            exit 2
+          fi
 
       - name: pack
         id: pack
         run: |
           set -euo pipefail
-          version="$(node -e 'console.log(require("./package.json").version)')"
-          tag="v${version}"
           mkdir -p dist-pkg
-          npm pack --pack-destination dist-pkg
-          tarball="dist-pkg/opencode-ship-${version}.tgz"
-          mv -v "$tarball" "dist-pkg/${tag}.tgz" || cp -v "$tarball" "dist-pkg/${tag}.tgz"
-          echo "package-version=${version}" >> "$GITHUB_OUTPUT"
-          echo "tarball=dist-pkg/${tag}.tgz" >> "$GITHUB_OUTPUT"
+          npm pack --pack-destination dist-pkg --json
+          # The tarball is renamed to the canonical GitHub release name so the
+          # release body URL and the actual artifact match. The npm publish
+          # step publishes the same file under that name.
+          mv -v "dist-pkg/opencode-ship-$(node -p "require('./package.json').version").tgz" "dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
+          echo "package-version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "tarball=dist-pkg/opencode-ship-${{ github.ref_name }}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: check npm version is unused
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_version="$(node -p "require('./package.json').version")"
+          status=$(npm view "opencode-ship@${pkg_version}" version --json 2>/dev/null || true)
+          if [[ -n "${status}" && "${status}" != "undefined" ]]; then
+            echo "::error::npm already has opencode-ship@${pkg_version}; refusing to republish"
+            exit 2
+          fi
+
+      - name: publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
+          npm publish "${tarball}" --access public --provenance --tag latest
 
       - name: publish release
         uses: softprops/action-gh-release@v2
@@ -59,28 +108,26 @@ jobs:
           body: |
             ## opencode-ship ${{ steps.pack.outputs.package-version }}
 
-            npm-distributed OpenCode installer and delivery plugin. See
-            `README.md` and `CHANGELOG.md` for the full release notes.
+            npm-distributed OpenCode installer and delivery plugin with the
+            optional `practices` profile foundation. See `README.md`
+            and `CHANGELOG.md` for the full release notes.
 
-            ### Install
+            ### Install (npm)
 
             ```sh
             pnpm dlx opencode-ship@latest init
             ```
 
-            Once npm releases this tag, the same command works against the
-            public registry. For tarball-only installs:
+            ### Install (GitHub release tarball)
 
             ```sh
             pnpm dlx --package=https://github.com/Viktorxyz/opencode-ship/releases/download/${{ github.ref_name }}/opencode-ship-${{ steps.pack.outputs.package-version }}.tgz opencode-ship init
             ```
           files: |
-            dist-pkg/${{ github.ref_name }}.tgz
+            dist-pkg/opencode-ship-${{ github.ref_name }}.tgz
             dist/plugin.js
             dist/cli.js
             dist/core.js
             dist/plugin.d.ts
             dist/cli.d.ts
             dist/core.d.ts
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

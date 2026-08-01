@@ -11,8 +11,9 @@ import { runDiff } from "./installer/commands/diff.js";
 import { runUpdate } from "./installer/commands/update.js";
 import { runUninstall } from "./installer/commands/uninstall.js";
 import { runDoctor } from "./installer/commands/doctor.js";
+import { PACKAGE_VERSION } from "./version.js";
 
-const VERSION = process.env.OPENCODE_SHIP_VERSION ?? "0.2.0";
+const VERSION = PACKAGE_VERSION;
 
 async function main() {
   const parsed = parseCommand(process.argv.slice(2));
