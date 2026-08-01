@@ -10,6 +10,8 @@
  *   - path         the on-disk target inside the consumer repo
  *   - source       the absolute source path inside this package
  *   - mode         the unix permission enforced on install
+ *   - profile      the profile(s) that include this entry; absent
+ *                  means the entry is part of every profile
  *
  * The catalog is immutable at runtime; `validateCatalog` confirms
  * every source exists, every path is `.opencode/-rooted`, and every
@@ -17,6 +19,16 @@
  * table without further validation. The catalog validator runs in
  * `init`, `diff`, and `update` and refuses to proceed when a source
  * is missing instead of silently producing an empty file.
+ *
+ * Profile filtering:
+ *   - `core`      ships the bundled plugin, the two delivery agents,
+ *                 and the two delivery skills.
+ *   - `practices` adds the practice subagents and the four
+ *                 methodology skills, including the vendored
+ *                 Superpowers content.
+ *   - The default profile is `core`. `init --profile practices`
+ *                 installs the full bundle; runtime switches are
+ *                 detected by the lock and gate the next `update`.
  */
 
 import { resolve, relative, sep } from "node:path";
@@ -26,6 +38,8 @@ import { PACKAGE_VERSION, TEMPLATE_SET } from "../version.js";
 
 export { PACKAGE_VERSION };
 export const TEMPLATE_SET_ID = TEMPLATE_SET;
+
+export const PROFILES = ["core", "practices"];
 
 const packageRoot = resolvePackageRoot(import.meta.url);
 
@@ -65,6 +79,62 @@ export const CATALOG = [
     source: resolve(packageRoot, "assets/skills/planning-research-checkpoint/SKILL.md"),
     mode: 0o644,
   },
+  {
+    id: "agent:practice-implementer",
+    kind: "agent",
+    path: ".opencode/agents/practice-implementer.md",
+    source: resolve(packageRoot, "assets/agents/practice-implementer.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "agent:practice-spec-reviewer",
+    kind: "agent",
+    path: ".opencode/agents/practice-spec-reviewer.md",
+    source: resolve(packageRoot, "assets/agents/practice-spec-reviewer.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "agent:practice-quality-reviewer",
+    kind: "agent",
+    path: ".opencode/agents/practice-quality-reviewer.md",
+    source: resolve(packageRoot, "assets/agents/practice-quality-reviewer.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "skill:test-driven-development",
+    kind: "skill",
+    path: ".opencode/skills/test-driven-development/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/test-driven-development/SKILL.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "skill:systematic-debugging",
+    kind: "skill",
+    path: ".opencode/skills/systematic-debugging/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/systematic-debugging/SKILL.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "skill:subagent-driven-development",
+    kind: "skill",
+    path: ".opencode/skills/subagent-driven-development/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/subagent-driven-development/SKILL.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
+  {
+    id: "skill:model-selection",
+    kind: "skill",
+    path: ".opencode/skills/model-selection/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/model-selection/SKILL.md"),
+    mode: 0o644,
+    profile: "practices",
+  },
 ];
 
 const ALLOWED_KINDS = new Set(["plugin", "agent", "skill", "support"]);
@@ -73,17 +143,25 @@ export function pluginPath() {
   return CATALOG.find((entry) => entry.kind === "plugin")?.path ?? ".opencode/plugins/opencode-ship.js";
 }
 
+export function normalizeProfile(profile) {
+  if (!profile || typeof profile !== "string") return "core";
+  return PROFILES.includes(profile) ? profile : "core";
+}
+
+export function catalogForProfile(profile, { catalog = CATALOG } = {}) {
+  const active = normalizeProfile(profile);
+  return catalog.filter((entry) => {
+    if (!entry.profile) return true;
+    if (Array.isArray(entry.profile)) return entry.profile.includes(active);
+    return entry.profile === active;
+  });
+}
+
 /**
  * Fail-closed catalog validation. Throws when any entry is malformed
  * or when any source file does not exist on disk. The caller decides
  * whether to surface this as the installer's exit code 4 (installer
  * surface) or as a packaging failure (prepack).
- *
- * The validator is intentionally strict: silent missing sources have
- * already produced consumer installs whose managed file was an empty
- * placeholder (see v0.2.0 lock schema requiring 64-hex hash but the
- * planner returning null on a missing source). Tight validation here
- * is the boundary the installer never crosses.
  */
 export function validateCatalog({ catalog = CATALOG } = {}) {
   const seenIds = new Set();
@@ -95,7 +173,7 @@ export function validateCatalog({ catalog = CATALOG } = {}) {
       issues.push({ id: null, kind: "shape", message: "catalog entry is not an object" });
       continue;
     }
-    const { id, kind, path, source, mode } = entry;
+    const { id, kind, path, source, mode, profile } = entry;
 
     if (typeof id !== "string" || id.length === 0) {
       issues.push({ id: null, kind: "id", message: `entry id missing: ${JSON.stringify(entry)}` });
@@ -116,6 +194,15 @@ export function validateCatalog({ catalog = CATALOG } = {}) {
 
     if (!ALLOWED_KINDS.has(kind)) {
       issues.push({ id, kind: "kind", message: `unsupported entry kind: ${kind}` });
+    }
+
+    if (profile !== undefined) {
+      const valid = Array.isArray(profile)
+        ? profile.every((p) => PROFILES.includes(p))
+        : PROFILES.includes(profile);
+      if (!valid) {
+        issues.push({ id, kind: "profile", message: `unsupported profile membership: ${JSON.stringify(profile)}` });
+      }
     }
 
     if (typeof source !== "string" || source.length === 0) {

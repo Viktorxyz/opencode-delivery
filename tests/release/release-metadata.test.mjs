@@ -12,6 +12,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { catalogForProfile } from "../../src/installer/catalog.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -75,4 +76,19 @@ test("source tree: only src/version.js hard-codes the current version", async ()
     if (versionRegex.test(text)) offenders.push(rel);
   }
   assert.deepEqual(offenders, [], `source files with hard-coded versions: ${offenders.join(", ")}`);
+});
+
+test("practices profile: catalog includes practice agents and skills", () => {
+  const practices = catalogForProfile("practices");
+  for (const id of [
+    "agent:practice-implementer",
+    "agent:practice-spec-reviewer",
+    "agent:practice-quality-reviewer",
+    "skill:test-driven-development",
+    "skill:systematic-debugging",
+    "skill:subagent-driven-development",
+    "skill:model-selection",
+  ]) {
+    assert.ok(practices.some((e) => e.id === id), `practices catalog missing ${id}`);
+  }
 });

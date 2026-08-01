@@ -22,8 +22,9 @@ function baseLock(extra = {}) {
     manager: {
       schemaVersion: CURRENT_LOCK_SCHEMA,
       name: "opencode-ship",
-      version: "0.3.0",
-      templateSet: "v0.3.0",
+      version: "0.4.0",
+      templateSet: "v0.4.0",
+      profile: "core",
       appliedAt: new Date().toISOString(),
       config: { path: ".opencode/ship.config.json", sha256: "0".repeat(64), existed: false },
       rootDocuments: [],

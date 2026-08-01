@@ -25,6 +25,7 @@ export async function runInit(options) {
     replaceManaged: false,
     forceConfig: Boolean(options.forceConfig),
     forceRootConfig: Boolean(options.forceRootConfig),
+    profile: options.profile,
   });
   if (!preview.ok) {
     if (preview.error?.kind === "unsupported-lock-schema") {

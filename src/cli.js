@@ -36,7 +36,7 @@ async function main() {
   /** @type {any} */ const opts = options;
   switch (parsed.command) {
     case "init":
-      await runInit({ json: !!opts.json, rootPath: opts.rootPath, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig, strictDoctor: !!opts.strictDoctor });
+      await runInit({ json: !!opts.json, rootPath: opts.rootPath, profile: opts.profile, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig, strictDoctor: !!opts.strictDoctor });
       return;
     case "diff":
       await runDiff({ json: !!opts.json, rootPath: opts.rootPath });

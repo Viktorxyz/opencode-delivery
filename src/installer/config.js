@@ -67,8 +67,10 @@ export function renderDefaultConfig(detection, overrides = {}) {
     ? detection.verificationPlan.map((step) => ({ id: step.id, argv: step.argv }))
     : [{ id: "typecheck", argv: ["npm", "run", "typecheck"] }];
   const repo = detection?.repository ?? overrides.repository ?? "owner/repo";
+  const profile = overrides.profile ?? "core";
   return {
     schemaVersion: 1,
+    profile,
     project: {
       remote: detection?.remote ?? "origin",
       repository: repo,

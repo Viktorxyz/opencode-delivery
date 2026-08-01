@@ -15,7 +15,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { CATALOG, TEMPLATE_SET_ID } from "./catalog.js";
+import { CATALOG, TEMPLATE_SET_ID, catalogForProfile, normalizeProfile } from "./catalog.js";
 import { PACKAGE_VERSION } from "../version.js";
 import {
   planFileInstall,
@@ -39,9 +39,9 @@ async function readCurrentBytes(targetPath) {
   return { bytes: buf, hash: bytesHashString(buf.toString("utf8")) };
 }
 
-async function gatherAllTargets(repoRoot) {
+async function gatherAllTargets(repoRoot, profile) {
   const out = [];
-  for (const entry of CATALOG) {
+  for (const entry of catalogForProfile(profile)) {
     out.push({ target: resolve(repoRoot, entry.path) });
   }
   out.push({ target: resolve(repoRoot, ".opencode/ship.lock.json") });
@@ -49,7 +49,7 @@ async function gatherAllTargets(repoRoot) {
   return out;
 }
 
-export async function previewInstall({ rootPath, replaceManaged, forceConfig, forceRootConfig }) {
+export async function previewInstall({ rootPath, replaceManaged, forceConfig, forceRootConfig, profile }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
@@ -63,19 +63,21 @@ export async function previewInstall({ rootPath, replaceManaged, forceConfig, fo
     return { ok: false, error: { kind: "lock-invalid", issues: validatedLock.issues } };
   }
   const lock = validatedLock.lock;
+  const activeProfile = normalizeProfile(profile ?? lock?.manager?.profile ?? "core");
   const migrationReport = await migration({ repoRoot, lock, forceRepair: false });
 
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
     migrationSeed: migrationReport?.proposedConfigSeed ?? null,
+    profile: activeProfile,
   });
-  const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged) });
+  const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged), profile: activeProfile });
   const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig) });
 
   const plan = [...(filePlan ?? []), configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
   const summary = summarise(plan);
-  return { ok: true, repoRoot, detection, lock, plan, conflicts, summary, migrationReport };
+  return { ok: true, repoRoot, detection, lock, plan, conflicts, summary, migrationReport, profile: activeProfile };
 }
 
 export async function previewUninstall({ rootPath }) {
@@ -112,7 +114,7 @@ function summarise(plan) {
   return counts;
 }
 
-async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
+async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, activeProfile }) {
   const files = [];
   const remain = lock?.files?.filter((f) => !plan.some((op) => op?.relPath === f.path)) ?? [];
 
@@ -153,6 +155,7 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
       name: "opencode-ship",
       version: process.env.OPENCODE_SHIP_VERSION ?? PACKAGE_VERSION,
       templateSet: TEMPLATE_SET_ID,
+      profile: activeProfile,
       appliedAt: new Date().toISOString(),
       config: {
         path: ".opencode/ship.config.json",
@@ -180,7 +183,8 @@ export async function commitInstall(preview, { json, command }) {
       /** @type {any} */ extra: { exitCode: 2, repoRoot: null, migrationReport: null },
     };
   }
-  const { repoRoot, plan, conflicts, migrationReport } = preview;
+  const { repoRoot, plan, conflicts, migrationReport, profile } = preview;
+  const activeProfile = normalizeProfile(profile ?? lock?.manager?.profile ?? "core");
   const filePlans = plan.filter((op) => op.op === "file");
   const configPlan = plan.find((op) => op.op === "config");
   const rootPlan = plan.find((op) => op.op === "root-config");
@@ -200,6 +204,7 @@ export async function commitInstall(preview, { json, command }) {
     lock: preview.lock,
     configPlan,
     rootPlan,
+    activeProfile,
   });
 
   const txPlan = await stageFiles(fileOnly, repoRoot);

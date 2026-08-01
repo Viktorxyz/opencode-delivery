@@ -13,7 +13,13 @@ import assert from "node:assert/strict";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { CATALOG, validateCatalog, PACKAGE_VERSION } from "../../src/installer/catalog.js";
+import {
+  CATALOG,
+  catalogForProfile,
+  normalizeProfile,
+  validateCatalog,
+  PACKAGE_VERSION,
+} from "../../src/installer/catalog.js";
 
 test("CATALOG: every entry declares id, kind, path, source, and mode", () => {
   for (const entry of CATALOG) {
@@ -93,4 +99,31 @@ test("validateCatalog: rejected error carries structured issues", () => {
     assert.ok(Array.isArray(e.issues));
     assert.equal(e.issues[0].kind, "kind");
   }
+});
+
+test("catalogForProfile: core omits practice entries", () => {
+  const core = catalogForProfile("core");
+  assert.ok(core.some((e) => e.id === "plugin:opencode-ship"));
+  assert.ok(core.some((e) => e.id === "agent:delivery-reviewer"));
+  assert.equal(core.some((e) => e.id === "agent:practice-implementer"), false);
+  assert.equal(core.some((e) => e.id === "skill:test-driven-development"), false);
+});
+
+test("catalogForProfile: practices includes both core and practice entries", () => {
+  const practices = catalogForProfile("practices");
+  assert.ok(practices.some((e) => e.id === "plugin:opencode-ship"));
+  assert.ok(practices.some((e) => e.id === "agent:practice-implementer"));
+  assert.ok(practices.some((e) => e.id === "agent:practice-spec-reviewer"));
+  assert.ok(practices.some((e) => e.id === "agent:practice-quality-reviewer"));
+  assert.ok(practices.some((e) => e.id === "skill:test-driven-development"));
+  assert.ok(practices.some((e) => e.id === "skill:systematic-debugging"));
+  assert.ok(practices.some((e) => e.id === "skill:subagent-driven-development"));
+  assert.ok(practices.some((e) => e.id === "skill:model-selection"));
+});
+
+test("normalizeProfile: unknown profile falls back to core", () => {
+  assert.equal(normalizeProfile("core"), "core");
+  assert.equal(normalizeProfile("practices"), "practices");
+  assert.equal(normalizeProfile(undefined), "core");
+  assert.equal(normalizeProfile("lol"), "core");
 });

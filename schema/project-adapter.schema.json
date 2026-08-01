@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Viktorxyz/opencode-ship/schema/project-adapter.schema.json",
+  "$id": "https://github.com/Viktorxyz/opencode-ship/raw/v0.4.0/schema/project-adapter.schema.json",
   "title": "opencode-ship project adapter",
   "type": "object",
   "required": ["contractVersion"],

@@ -123,6 +123,7 @@ export function legacyToShipConfig(legacy) {
     : "owner/repo";
   return {
     schemaVersion: 1,
+    profile: "core",
     project: {
       remote: legacy.repository?.remote ?? "origin",
       repository: repoSlug,

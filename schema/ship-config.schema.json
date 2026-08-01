@@ -1,12 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Viktorxyz/opencode-ship/schema/ship-config.schema.json",
+  "$id": "https://github.com/Viktorxyz/opencode-ship/raw/v0.4.0/schema/ship-config.schema.json",
   "title": "opencode-ship user config",
   "type": "object",
   "required": ["schemaVersion"],
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "const": 1 },
+    "profile": {
+      "type": "string",
+      "enum": ["core", "practices"],
+      "description": "Installer profile. `core` ships the bundled plugin, the two delivery agents, and the two delivery skills. `practices` adds the practice subagents and the four methodology skills, including the vendored Superpowers content."
+    },
     "owner": {
       "type": "string",
       "description": "Optional override for the issue/manifest owner field. Defaults to the agent's local user.name."

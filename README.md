@@ -2,7 +2,7 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.3.0 hardened distribution. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. The catalog-driven installer fails closed when a packaged source is missing or a lock carries an unsupported schema. The plugin target is `.opencode/plugins/opencode-ship.js`; OpenCode auto-loads plugins from the plural directory. v0.3 records every installer-owned root pointer; v0.4 restores ownership on uninstall.
+> **Status:** v0.4.0 releases the optional engineering-practices profile. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. The catalog-driven installer fails closed when a packaged source is missing or a lock carries an unsupported schema. The plugin target is `.opencode/plugins/opencode-ship.js`; OpenCode auto-loads plugins from the plural directory. The default profile is `core`; pass `--profile practices` to install the practice subagents and the four methodology skills (vendored under the original MIT license).
 
 ---
 
@@ -36,7 +36,8 @@ The only source tree that ships in the npm tarball is `assets/`. Anything copied
 Once `opencode-ship` is published, consumers install with `pnpm dlx` (or `npx`) and never edit the file by hand:
 
 ```
-pnpm dlx opencode-ship@latest init      # install managed files
+pnpm dlx opencode-ship@latest init      # install managed files (core profile)
+pnpm dlx opencode-ship@latest init --profile practices  # install the practices profile
 pnpm dlx opencode-ship@latest update    # apply a packaged upgrade
 pnpm dlx opencode-ship@latest diff      # preview what would change
 pnpm dlx opencode-ship@latest doctor    # environment and lock audit
@@ -46,7 +47,7 @@ pnpm dlx opencode-ship@latest uninstall # remove only the files still matching t
 If you want to try a pre-release tarball locally without publishing to npm:
 
 ```bash
-pnpm dlx --package=/absolute/path/opencode-ship-0.3.0.tgz opencode-ship init
+pnpm dlx --package=/absolute/path/opencode-ship-0.4.0.tgz opencode-ship init --profile practices
 ```
 
 The plugin auto-discovers from `.opencode/plugins/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user. Use `--force-root-config` on `init` to create a minimal `opencode.json` if the consumer has none.
@@ -63,7 +64,7 @@ The plugin auto-discovers from `.opencode/plugins/opencode-ship.js`; the consume
 .opencode/ship.lock.json       # installer-managed; drives update + uninstall
 ```
 
-These seven files (five managed plus two generated) form the default install footprint. A future `practices` profile will register additional assets; the installer’s catalog and doctor both read from `assets/` so adding new managed files never requires rewriting the doctor or installer entry points.
+These seven files (five managed plus two generated) form the default `core` install footprint. The `practices` profile adds three practice subagents and four methodology skills (vendored under the original MIT license, see `THIRD_PARTY_NOTICES.md`). The installer's catalog and doctor both read from `assets/` so adding new managed files never requires rewriting the doctor or installer entry points.
 
 ### Schema files
 
@@ -124,7 +125,7 @@ The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
-- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. v0.3.0 hardens the installer and the release pipeline; subsequent releases follow standard `<major>.<minor>.<patch>` rules.
+- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. v0.3.0 hardens the installer and the release pipeline; v0.4.0 adds the optional engineering-practices profile. Subsequent releases follow standard `<major>.<minor>.<patch>` rules.
 - **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5 < 2` and OpenCode `>= 1.15.5`.
 
 ## FAQ

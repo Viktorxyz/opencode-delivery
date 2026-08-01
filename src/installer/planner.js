@@ -24,7 +24,7 @@
 
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { CATALOG } from "./catalog.js";
+import { CATALOG, catalogForProfile } from "./catalog.js";
 import { bytesHashString } from "./hash.js";
 import { loadConfig, renderDefaultConfig } from "./config.js";
 import {
@@ -99,9 +99,9 @@ async function planManagedFile({ entry, repoRoot, lock, allowUnowned }) {
   };
 }
 
-export async function planFileInstall({ repoRoot, lock, allowUnowned = false }) {
+export async function planFileInstall({ repoRoot, lock, allowUnowned = false, profile = "core" }) {
   const plan = [];
-  for (const entry of CATALOG) {
+  for (const entry of catalogForProfile(profile)) {
     plan.push(await planManagedFile({ entry, repoRoot, lock, allowUnowned }));
   }
   return plan;
@@ -126,7 +126,7 @@ export async function planUninstall({ repoRoot, lock }) {
   return plan;
 }
 
-export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite, migrationSeed = null }) {
+export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite, migrationSeed = null, profile = "core" }) {
   const existing = await loadConfig(repoRoot);
   if (existing?.ok && !forceOverwrite) {
     return {
@@ -140,7 +140,9 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
       reason: "user config already present",
     };
   }
-  const desiredValue = migrationSeed ?? renderDefaultConfig(detection);
+  const desiredValue = migrationSeed
+    ? { ...migrationSeed, profile: migrationSeed.profile ?? profile }
+    : renderDefaultConfig(detection, { profile });
   const desiredJson = JSON.stringify(desiredValue, null, 2) + "\n";
   const desiredSha = bytesHashString(desiredJson);
   const kind = existing?.ok && forceOverwrite ? "update" : "create";

@@ -117,6 +117,9 @@ export function validateLock(rawLock) {
   } else if (manager.name !== "opencode-ship") {
     issues.push(`unknown manager.name: ${JSON.stringify(manager.name)}`);
     kind = "shape";
+  } else if (manager.profile !== "core" && manager.profile !== "practices") {
+    issues.push(`unsupported manager.profile: ${JSON.stringify(manager.profile)}`);
+    kind = kind === "ok" ? "shape" : kind;
   }
 
   if (!rawLock.files || !Array.isArray(rawLock.files)) {

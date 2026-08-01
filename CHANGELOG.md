@@ -2,6 +2,57 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.4.0 — Optional engineering-practices profile
+
+`opencode-ship@0.4.0` adds the optional `practices` profile on top of the
+v0.3.0 core installer. The default profile is still `core`; consumers opt in
+to the additional practice subagents and methodology skills with
+`opencode-ship init --profile practices`. The practices profile vendors
+Superpowers-skill content (test-driven-development, systematic-debugging,
+subagent-driven-development) under the original MIT license and adds a
+fourth advisory `model-selection` skill that explains why methodology
+helpers do not pin a `model:` line.
+
+### Added
+
+- `profile: "core" | "practices"` field on the user-owned `ship.config.json`; omitted means `core`.
+- `init --profile <name>` flag to pick the profile on a fresh install.
+- `src/installer/catalog.js` exports `PROFILES`, `normalizeProfile`, and `catalogForProfile(profile)`. Catalog entries can declare `profile: "practices"`; the planner, executor, and locks scope to the active profile.
+- Practice subagents:
+  - `.opencode/agents/practice-implementer.md` (red-green-refactor TDD workflow; edist / bash permission; no `model:` pin).
+  - `.opencode/agents/practice-spec-reviewer.md` (read-only spec compliance; `model: minimax/MiniMax-M3`).
+  - `.opencode/agents/practice-quality-reviewer.md` (read-only code quality; `model: minimax/MiniMax-M3`).
+- Practice skills:
+  - `.opencode/skills/test-driven-development/SKILL.md` and `testing-anti-patterns.md` (vendored from `obra/superpowers` `bd2122c`).
+  - `.opencode/skills/systematic-debugging/SKILL.md` plus `root-cause-tracing.md`, `defense-in-depth.md`, `condition-based-waiting.md`, `condition-based-waiting-example.ts` (vendored).
+  - `.opencode/skills/subagent-driven-development/SKILL.md` plus `implementer-prompt.md`, `spec-reviewer-prompt.md`, `code-quality-reviewer-prompt.md` (vendored).
+  - `.opencode/skills/model-selection/SKILL.md` (opencode-ship advisory; explains why methodology helpers leave `model:` implicit).
+- `manager.profile` field on the lock; a v0.3 lock without `profile` is treated as `core`. The lock schema is updated to require `profile`.
+- `THIRD_PARTY_NOTICES.md` cites the Superpowers MIT license for the vendored skill content.
+- `tests/installer/catalog.test.mjs` adds the `catalogForProfile`/`normalizeProfile` tests; `tests/installer/root-config.test.mjs` adds the practices profile install test.
+
+### Changed
+
+- `src/installer/catalog.js` adds the `profile` field to the per-entry validation; the error now lists any unsupported profile membership.
+- `src/installer/lock.js` validates `manager.profile` and fails closed with `kind: "shape"` on an unknown value.
+- `src/installer/executor.js` emits the active profile into the lock and threads it through the planner.
+- `src/installer/cli-args.js` introduces the `--profile <name>` flag.
+- `scripts/prepack.mjs` requires every published artifact, including the Superpowers content under `assets/`.
+
+### Fixed
+
+- `packed-artifact` smoke test now expects the lock to carry the active profile.
+
+### Compatibility
+
+- v0.3.0 consumers with an existing lock will read `manager.profile` as
+  `core` because the validator accepts the missing field; the next
+  `update` writes the profile into the lock. No managed skill id
+  changes between v0.3 and v0.4 — the core profile is byte-identical on
+  disk.
+
+## 0.3.0 — Installer hardening and release pipeline
+
 ## 0.3.0 — Installer hardening and release pipeline
 
 `opencode-ship@0.3.0` hardens the installer for the public registry and prepares the package for the upcoming optional engineering-practices profile. The package is now fully consumable from npm with provenance. The catalog still installs the same five managed files plus the two generated artifacts (`ship.config.json`, `ship.lock.json`), and adds tighter guards around every existing one. The plugin target is `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the plural directory; root-config pointer ownership is recorded for every installer-owned entry, restoring the previous values on uninstall is the v0.4 follow-up.

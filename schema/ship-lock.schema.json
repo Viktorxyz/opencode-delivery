@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Viktorxyz/opencode-ship/schema/ship-lock.schema.json",
+  "$id": "https://github.com/Viktorxyz/opencode-ship/raw/v0.4.0/schema/ship-lock.schema.json",
   "title": "opencode-ship install lock",
   "type": "object",
   "required": ["contractVersion", "manager", "files", "integrity"],
@@ -9,10 +9,11 @@
     "contractVersion": { "const": 1 },
     "manager": {
       "type": "object",
-      "required": ["schemaVersion", "name", "version", "appliedAt", "config"],
+      "required": ["schemaVersion", "name", "version", "profile", "appliedAt", "config"],
       "additionalProperties": false,
       "properties": {
         "schemaVersion": { "const": 1 },
+        "profile": { "enum": ["core", "practices"] },
         "name": { "type": "string", "pattern": "^opencode-ship$" },
         "version": { "type": "string", "minLength": 1 },
         "templateSet": { "type": "string", "minLength": 1 },
