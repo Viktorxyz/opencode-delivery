@@ -2,6 +2,24 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.6.0 — Durable plan artifact + Plan Mode integration
+
+`opencode-ship@0.6.0` ships the durable plan artifact and the Plan Mode permission integration required by issue #21. The runtime now supports the GPT-to-MiniMax handoff end-to-end: a planning sub-agent can write a hash-verified plan to `.git/opencode-ship/plans/<slug>/revision-NNNN.json`, mirror it to the parent issue as a marked comment, and run with a deny-first, narrow-allow permission block that prevents it from touching source/config/docs.
+
+### Verification
+
+- `npm run verify` exits `0` with 283 tests across 34 suites on the v0.6 HEAD.
+
+### Added
+
+- **Plan artifact.** `src/installer/plan.js` declares the plan schema (version, revision, parentIssue, baseSha, architecture, global constraints, file responsibilities, ordered tasks with interfaces / testSeams / commands / expectedEvidence, acceptance, out of scope, recovery). `validatePlan` is fail-closed; `computePlanHash` produces a stable SHA-256 over the canonical content; `canRevise` enforces the append-only N+1 rule; `planNeedsPlaceholderReview` flags any `<placeholder>` marker so a final-reviewer can refuse approval.
+- **Plan persistence.** `src/installer/plan-store.js` writes, reads, and lists plan revisions under `.git/opencode-ship/plans/<planSlug>/revision-NNNN.json`. The store refuses to overwrite or skip revisions.
+- **Plan issue mirror.** `src/installer/plan-mirror.js` posts the approved plan to the parent issue as a marked comment with the stable `opencode-ship-execution-handoff:v1` marker, the plan hash, and the revision. Retries with linear backoff. The client is injectable so tests run without `gh`.
+- **Engineering config.** `src/installer/engineering-config.js` validates the user config (`models.{planner,builder,finalReviewer}` and `plans.{root,mirrorToIssue}`) and resolves model roles with documented defaults. Strict mode throws on missing roles.
+- **Plan Mode permission block.** `src/installer/plan-mode-permissions.js` produces the deny-first, narrow-allow permission set documented in the approved plan: bash / webfetch / task.plan-agent / task.build-agent deny, edit / write allow only `.git/opencode-ship/plans/**`.
+- **OpenCode config integration.** `src/installer/root-config.js` gains `applyPlanModeOwnership` which injects the Plan Mode block under `agent.plan.permission` on the consumer's `opencode.json` when the active profile is `engineering`. Captures the previous value so uninstall can restore it.
+- **Executor wiring.** `src/installer/executor.js` and `planner.js` thread the active profile through to the planner so core consumers never see the Plan Mode block.
+
 ## 0.5.0 — Engineering profile content
 
 `opencode-ship@0.5.0` ships the engineering profile content required by issue #20. The `engineering` profile now installs two additional placeholder SKILL.md files (`triage`, `grill-with-docs`) alongside the existing core-managed files. The real SKILL.md content is pending vendoring from `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`; the placeholders let the profile transition path work today so issue #20 closes while the real content lands.

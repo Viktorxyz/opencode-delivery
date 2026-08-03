@@ -1,9 +1,10 @@
 # Third-Party Notices
 
-`opencode-ship@0.5.0` ships the profile-aware installer foundation
-(`core` and `engineering` profiles). The `core` profile ships only
-opencode-ship-authored content (two delivery agents, two workflow
-skills). The `engineering` profile vendors material from
+`opencode-ship@0.6.0` ships the profile-aware installer foundation
+(`core` and `engineering` profiles) plus the durable plan artifact
+and Plan Mode permission integration. The `core` profile ships
+only opencode-ship-authored content (two delivery agents, two
+workflow skills). The `engineering` profile vendors material from
 [mattpocock/skills](https://github.com/mattpocock/skills) under
 the MIT license; the canonical license text is preserved in
 `vendor/mattpocock/LICENSE`. The current package version ships
