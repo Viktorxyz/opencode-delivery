@@ -28,27 +28,28 @@ async function main() {
     return;
   }
   if ("error" in parsed) {
-    process.stdout.write(`opencode-ship: ${parsed.error}\n\n${helpText()}`);
+    process.stderr.write(`opencode-ship: ${parsed.error}\n\n${helpText()}`);
     process.exitCode = 2;
     return;
   }
   const options = parsed.options ?? {};
   /** @type {any} */ const opts = options;
+  const profile = opts.profile ?? null;
   switch (parsed.command) {
     case "init":
-      await runInit({ json: !!opts.json, rootPath: opts.rootPath, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig, strictDoctor: !!opts.strictDoctor });
+      await runInit({ json: !!opts.json, rootPath: opts.rootPath, profile, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig, strictDoctor: !!opts.strictDoctor });
       return;
     case "diff":
-      await runDiff({ json: !!opts.json, rootPath: opts.rootPath });
+      await runDiff({ json: !!opts.json, rootPath: opts.rootPath, profile });
       return;
     case "update":
-      await runUpdate({ json: !!opts.json, rootPath: opts.rootPath, replaceManaged: !!opts.replaceManaged, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig });
+      await runUpdate({ json: !!opts.json, rootPath: opts.rootPath, profile, replaceManaged: !!opts.replaceManaged, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig });
       return;
     case "doctor":
-      await runDoctor({ json: !!opts.json, rootPath: opts.rootPath });
+      await runDoctor({ json: !!opts.json, rootPath: opts.rootPath, profile });
       return;
     case "uninstall":
-      await runUninstall({ json: !!opts.json, rootPath: opts.rootPath, purgeConfig: !!opts.purgeConfig });
+      await runUninstall({ json: !!opts.json, rootPath: opts.rootPath, profile, purgeConfig: !!opts.purgeConfig });
       return;
     default:
       process.stdout.write(helpText() + "\n");

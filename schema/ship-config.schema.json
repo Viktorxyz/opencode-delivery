@@ -7,6 +7,11 @@
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "const": 1 },
+    "profile": {
+      "type": "string",
+      "enum": ["core", "engineering"],
+      "description": "Active profile (precedence layer 2: ship.config > lock > core default)."
+    },
     "owner": {
       "type": "string",
       "description": "Optional override for the issue/manifest owner field. Defaults to the agent's local user.name."

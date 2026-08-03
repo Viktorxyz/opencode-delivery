@@ -26,9 +26,10 @@ import { loadConfig } from "../config.js";
 import { detectProject } from "../detection/project.js";
 import { resolve } from "node:path";
 import { bytesHashString } from "../hash.js";
-import { CATALOG, validateCatalog } from "../catalog.js";
+import { CATALOG, filterCatalogByProfile, validateCatalog } from "../catalog.js";
 import { readRootConfig, applyOwnedPointers } from "../root-config.js";
 import { renderHuman, renderJson, summarise } from "../report.js";
+import { resolveProfile } from "../../profile.js";
 
 function checkNode() {
   return { name: "node>=22.6.0", ok: /^v2[2-9]/.test(process.version), detail: process.version };
@@ -159,6 +160,35 @@ async function checkManagedHashes(repoRoot, validatedLock) {
   return { name: "managed hashes", ok: drift.length === 0, detail: drift.length ? drift.join(",") : "match" };
 }
 
+async function checkActiveProfileFootprint(repoRoot, validatedLock, profile) {
+  // Doctor checks only the active profile's footprint, while
+  // package integrity (checkPackageIntegrity) checks the full
+  // catalog. This makes doctor report the consumer-relevant state
+  // rather than every file in the package.
+  if (validatedLock.kind !== "ok" || !validatedLock.lock) {
+    return { name: "profile footprint", ok: true, detail: "no lock; n/a" };
+  }
+  if (!profile) {
+    return { name: "profile footprint", ok: true, detail: "no profile; n/a" };
+  }
+  const expectedPaths = new Set(
+    filterCatalogByProfile(CATALOG, profile).map((e) => e.path),
+  );
+  // Lock may contain entries that match the active profile OR
+  // entries that are no longer in the active profile (transition
+  // candidates). Doctor only requires the active-profile entries
+  // to be present.
+  const present = (validatedLock.lock.files ?? [])
+    .filter((f) => expectedPaths.has(f.path))
+    .map((f) => f.path);
+  const missing = [...expectedPaths].filter((p) => !present.includes(p));
+  return {
+    name: "profile footprint",
+    ok: missing.length === 0,
+    detail: missing.length ? `missing profile assets: ${missing.join(",")}` : `${present.length}/${expectedPaths.size} present`,
+  };
+}
+
 async function checkRootConfig(repoRoot) {
   const { findRootConfig } = await import("../root-config.js");
   const candidate = findRootConfig(repoRoot);
@@ -185,7 +215,7 @@ function writeEnvelope({ command, plan, summary, diagnostics, json, exitCode }) 
   }
 }
 
-export async function runDoctor({ rootPath, json, writeOutput = true }) {
+export async function runDoctor({ rootPath, profile, json, writeOutput = true }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     const issues = ["not in a git repository"];
@@ -203,6 +233,17 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
   const validatedLock = await readValidatedLock(repoRoot);
   const packageIntegrity = checkPackageIntegrity();
 
+  // Resolve the active profile using the same precedence as
+  // init/update so the doctor check matches the file set init
+  // would install.
+  const configResult = await loadConfig(repoRoot);
+  const configValue = configResult?.ok ? configResult.value : null;
+  const resolved = resolveProfile({
+    cli: profile,
+    config: configValue,
+    lock: validatedLock.lock,
+  });
+
   const checks = [
     checkNode(),
     checkGit(),
@@ -213,6 +254,7 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
     await checkLock(repoRoot),
     await checkConfig(repoRoot),
     await checkManagedHashes(repoRoot, validatedLock),
+    await checkActiveProfileFootprint(repoRoot, validatedLock, resolved.profile),
     await checkRootConfig(repoRoot),
   ];
   const issues = checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`);
@@ -229,5 +271,5 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
 
   if (writeOutput) writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
   process.exitCode = exitCode;
-  return { issues, exitCode, plan, checks };
+  return { issues, exitCode, plan, checks, profile: resolved };
 }

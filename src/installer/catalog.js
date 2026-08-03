@@ -23,12 +23,22 @@ import { resolve, relative, sep } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { resolvePackageRoot } from "./package-root.js";
 import { PACKAGE_VERSION, TEMPLATE_SET } from "../version.js";
+import { PROFILES, isValidProfile, DEFAULT_PROFILE } from "../profile.js";
 
 export { PACKAGE_VERSION };
 export const TEMPLATE_SET_ID = TEMPLATE_SET;
 
 const packageRoot = resolvePackageRoot(import.meta.url);
 
+/**
+ * The full asset catalog. Every entry declares which profile(s)
+ * it belongs to via the `profiles` array. The "core" profile is
+ * the baseline (all current v0.3 entries); "engineering" is the
+ * opt-in extension that adds Matt + Superpowers workflow assets.
+ *
+ * Entries can belong to multiple profiles (e.g., a delivery
+ * helper that core and engineering both consume).
+ */
 export const CATALOG = [
   {
     id: "plugin:opencode-ship",
@@ -36,6 +46,7 @@ export const CATALOG = [
     path: ".opencode/plugins/opencode-ship.js",
     source: resolve(packageRoot, "dist/plugin.js"),
     mode: 0o644,
+    profiles: ["core", "engineering"],
   },
   {
     id: "agent:delivery-reviewer",
@@ -43,6 +54,7 @@ export const CATALOG = [
     path: ".opencode/agents/delivery-reviewer.md",
     source: resolve(packageRoot, "assets/agents/delivery-reviewer.md"),
     mode: 0o644,
+    profiles: ["core", "engineering"],
   },
   {
     id: "agent:delivery-verifier",
@@ -50,6 +62,7 @@ export const CATALOG = [
     path: ".opencode/agents/delivery-verifier.md",
     source: resolve(packageRoot, "assets/agents/delivery-verifier.md"),
     mode: 0o644,
+    profiles: ["core", "engineering"],
   },
   {
     id: "skill:delivery-workflow",
@@ -57,6 +70,7 @@ export const CATALOG = [
     path: ".opencode/skills/delivery-workflow/SKILL.md",
     source: resolve(packageRoot, "assets/skills/delivery-workflow/SKILL.md"),
     mode: 0o644,
+    profiles: ["core", "engineering"],
   },
   {
     id: "skill:planning-research-checkpoint",
@@ -64,8 +78,24 @@ export const CATALOG = [
     path: ".opencode/skills/planning-research-checkpoint/SKILL.md",
     source: resolve(packageRoot, "assets/skills/planning-research-checkpoint/SKILL.md"),
     mode: 0o644,
+    profiles: ["core", "engineering"],
   },
 ];
+
+/**
+ * Return only the catalog entries that ship under the given
+ * profile. Engineering must be a superset of core (no profile
+ * can drop a core-only asset without a deprecated tag).
+ */
+export function filterCatalogByProfile(catalog, profile) {
+  const effective = profile === undefined || profile === null ? DEFAULT_PROFILE : profile;
+  if (!isValidProfile(effective)) {
+    throw new Error(
+      `filterCatalogByProfile: unknown profile '${profile}' (expected one of: ${PROFILES.join(", ")})`,
+    );
+  }
+  return catalog.filter((entry) => Array.isArray(entry.profiles) && entry.profiles.includes(effective));
+}
 
 const ALLOWED_KINDS = new Set(["plugin", "agent", "skill", "support"]);
 
@@ -137,6 +167,16 @@ export function validateCatalog({ catalog = CATALOG } = {}) {
 
     if (mode !== 0o644) {
       issues.push({ id, kind: "mode", message: `mode must be 0o644: ${id}` });
+    }
+
+    if (!Array.isArray(entry.profiles) || entry.profiles.length === 0) {
+      issues.push({ id, kind: "profiles", message: `profiles must be a non-empty array: ${id}` });
+    } else {
+      for (const p of entry.profiles) {
+        if (!isValidProfile(p)) {
+          issues.push({ id, kind: "profiles", message: `unknown profile in profiles[${entry.profiles.indexOf(p)}]: ${p} (expected one of: ${PROFILES.join(", ")})` });
+        }
+      }
     }
   }
 

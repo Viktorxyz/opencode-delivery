@@ -20,6 +20,7 @@ export async function runUpdate(options) {
   }
   const preview = await previewInstall({
     rootPath: options.rootPath,
+    profile: options.profile ?? null,
     replaceManaged: options.replaceManaged,
     forceConfig: options.forceConfig,
     forceRootConfig: options.forceRootConfig,
