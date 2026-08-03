@@ -4,7 +4,12 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## 0.3.0 — Installer hardening and release pipeline
 
-`opencode-ship@0.3.0` hardens the installer for the public registry and prepares the package for the upcoming optional engineering-practices profile. The package is now fully consumable from npm with provenance. The catalog still installs the same five managed files plus the two generated artifacts (`ship.config.json`, `ship.lock.json`), and adds tighter guards around every existing one. The plugin target is `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the plural directory; root-config pointer ownership is recorded for every installer-owned entry, restoring the previous values on uninstall is the v0.4 follow-up.
+`opencode-ship@0.3.0` hardens the installer for the public registry. This is the v0.3 installer foundation with the `core` profile only; it carries no third-party workflow skill bytes. The package is now fully consumable from npm with provenance. The catalog installs the five managed files plus the two generated artifacts (`ship.config.json`, `ship.lock.json`), and adds tighter guards around every existing one. The plugin target is `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the plural directory; root-config pointer ownership is recorded for every installer-owned entry so the future v0.4 opt-in `engineering` profile can restore previous values on uninstall. v0.3 is the approved slice shipped by parent spec `Viktorxyz/opencode-ship#16` and plan revision `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be`.
+
+### Verification
+
+- `npm run verify` exits `0` with 190 tests across 34 suites on the v0.3 HEAD.
+- `npm pack` and the extracted-tarball smoke both succeed; the bundled plugin registers the canonical nine `delivery_*` tools.
 
 ### Changed
 
@@ -24,7 +29,7 @@ All notable changes to `opencode-ship` are recorded here.
 - **Release workflow.** `.github/workflows/release.yml` validates that the tag matches `package.json#version`, validates `package-lock.json` and `package.json` carry the same version, refuses to republish an existing npm version, renames the tarball to `opencode-ship-<tag>.tgz`, and gates publication on `npm run verify`. The trusted-publisher identity is `Viktorxyz/opencode-ship`; `id-token: write` is granted to the job.
 - **Repository identity.** Schema `$id` URLs, the package homepage, repository URL, and bugs URL all point at `https://github.com/Viktorxyz/opencode-ship/…`. The previously published `0.2.0` and `0.2.1` were produced from the `Viktorxyz/opencode-delivery` GitHub repo; v0.3.0 is the first release from `Viktorxyz/opencode-ship`.
 - **Publishing policy.** `publishConfig.access = "public"` and `publishConfig.provenance = true` are set in `package.json`.
-- **Removal of unused CLI flag.** The unset `--config` flag is removed from `cli-args.js`; the planned v0.4 flag will be added to a released version with the documented behavior.
+- **Removal of unused CLI flag.** The unset `--config` flag is removed from `cli-args.js`; the planned v0.4 profile flag will be added to a released version with the documented behavior.
 
 ### Added
 
@@ -35,7 +40,7 @@ All notable changes to `opencode-ship` are recorded here.
 - `src/installer/migration.js` returns a `proposedConfigSeed`; `planConfigSynthesis()` consumes it instead of branching on legacy state.
 - `tests/installer/catalog.test.mjs`, `tests/installer/lock-validation.test.mjs`, `tests/installer/root-config.test.mjs`, `tests/installer/migration-pure.test.mjs`, and `tests/release/release-metadata.test.mjs` exercise the new contracts.
 - `tests/package/packed-artifact.test.mjs` extracts the npm tarball into a clean directory and runs its bundled CLI to `init` a fresh Git repository, asserting the plugin path, the five managed files, the lock, and the pointer records.
-- `THIRD_PARTY_NOTICES.md` records that v0.3 contains no third-party skill bytes and reserves the attribution surface for the engineering-profile release that introduces them.
+- `THIRD_PARTY_NOTICES.md` records that v0.3 contains no third-party skill bytes and reserves the attribution surface for the v0.4 `engineering` profile that introduces them.
 - `scripts/prepack.mjs` runs `validateCatalog()` and verifies every required packaged artifact before publishing.
 
 ### Fixed

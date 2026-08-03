@@ -63,6 +63,33 @@ test("release.yml: validates tag against package.json and publishes to npm", () 
   assert.match(yaml, /opencode-ship-\$\{\{ github\.ref_name \}\}\.tgz/);
 });
 
+test("docs: shipping docs reference the approved engineering-workflow plan", () => {
+  const changelog = readText("CHANGELOG.md");
+  const readme = readText("README.md");
+  const planSha = "f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be";
+  for (const [name, text] of [["CHANGELOG.md", changelog], ["README.md", readme]]) {
+    assert.ok(text.includes(planSha), `${name} must reference the approved plan hash`);
+    assert.ok(text.includes("core"), `${name} must keep the documented core profile`);
+    assert.ok(!text.includes("practices"), `${name} must not reference the obsolete practices profile`);
+  }
+});
+
+test("docs: README and CHANGELOG report 190 tests for the v0.3 verification baseline", () => {
+  const changelog = readText("CHANGELOG.md");
+  const readme = readText("README.md");
+  for (const [name, text] of [["CHANGELOG.md", changelog], ["README.md", readme]]) {
+    assert.ok(text.includes("190"), `${name} must report the 190-test verification baseline`);
+    assert.ok(!/184 tests/.test(text), `${name} must not report the obsolete 184-test baseline`);
+  }
+});
+
+test("docs: THIRD_PARTY_NOTICES.md is empty in v0.3.0 and names the v0.4 attribution profile", () => {
+  const notices = readText("THIRD_PARTY_NOTICES.md");
+  assert.match(notices, /opencode-ship@0\.3\.0/);
+  assert.match(notices, /opencode-ship@0\.3\.0.*does not bundle third-party skill content/i);
+  assert.match(notices, /v0\.4.*engineering.*profile/);
+});
+
 test("source tree: no source file hard-codes the current version", async () => {
   const { readdir, readFile } = await import("node:fs/promises");
   const srcDir = `${root}/src`;

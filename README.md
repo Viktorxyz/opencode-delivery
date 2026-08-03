@@ -2,7 +2,7 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.3.0 hardened distribution. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. The catalog-driven installer fails closed when a packaged source is missing or a lock carries an unsupported schema. The plugin target is `.opencode/plugins/opencode-ship.js`; OpenCode auto-loads plugins from the plural directory. v0.3 records every installer-owned root pointer; v0.4 restores ownership on uninstall.
+> **Status:** v0.3.0 installer foundation. The installer is a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. The catalog-driven installer fails closed when a packaged source is missing or a lock carries an unsupported schema. The plugin target is `.opencode/plugins/opencode-ship.js`; OpenCode auto-loads plugins from the plural directory. v0.3 records every installer-owned root pointer; v0.4 restores ownership on uninstall and ships the opt-in `engineering` profile that turns this distribution into the canonical workflow defined by approved plan `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be` (`Viktorxyz/opencode-ship#16`).
 
 ---
 
@@ -63,7 +63,7 @@ The plugin auto-discovers from `.opencode/plugins/opencode-ship.js`; the consume
 .opencode/ship.lock.json       # installer-managed; drives update + uninstall
 ```
 
-These seven files (five managed plus two generated) form the default install footprint. A future `practices` profile will register additional assets; the installer’s catalog and doctor both read from `assets/` so adding new managed files never requires rewriting the doctor or installer entry points.
+These seven files (five managed plus two generated) form the default `core` install footprint. The opt-in `engineering` profile installs additional assets through the same catalog; the installer’s catalog and doctor both read from `assets/` so adding new managed files never requires rewriting the doctor or installer entry points. v0.3 ships the `core` profile only.
 
 ### Schema files
 
@@ -111,7 +111,7 @@ Existing consumers of `opencode-delivery@0.1.x` (commit-pinned shim) can run `pn
 
 ## Development
 
-`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. The tests cover the installer CLI, the lock and root-config planners, the catalog validator, the schema validator, agents, the packed-artifact smoke check, and the order-preserving root-config merge. The exact count moves as new lock-validation and catalog tests land.
+`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. The tests cover the installer CLI, the lock and root-config planners, the catalog validator, the schema validator, agents, the packed-artifact smoke check, the transaction-recovery contract, and the order-preserving root-config merge. v0.3 ships with 190 tests across 34 suites on the approved plan hash `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be`.
 
 ```
 npm ci
@@ -124,7 +124,7 @@ The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
-- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. v0.3.0 hardens the installer and the release pipeline; subsequent releases follow standard `<major>.<minor>.<patch>` rules.
+- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. v0.3.0 is the installer foundation with core-only defaults. v0.4.0 adds the opt-in `engineering` profile that completes the approved `engineering-workflow-v0.4` plan.
 - **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5 < 2` and OpenCode `>= 1.15.5`.
 
 ## FAQ
