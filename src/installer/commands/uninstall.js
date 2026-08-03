@@ -14,7 +14,7 @@ import { previewUninstall } from "../executor.js";
 import { configPath } from "../config.js";
 
 export async function runUninstall(options) {
-  const preview = await previewUninstall({ rootPath: options.rootPath });
+  const preview = await previewUninstall({ rootPath: options.rootPath, profile: options.profile ?? null });
   if (!preview.ok) {
     if (preview.error?.kind === "unsupported-lock-schema") {
       return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json);

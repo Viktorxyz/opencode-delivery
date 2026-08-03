@@ -22,6 +22,7 @@ export async function runInit(options) {
   }
   const preview = await previewInstall({
     rootPath: options.rootPath ?? null,
+    profile: options.profile ?? null,
     replaceManaged: false,
     forceConfig: Boolean(options.forceConfig),
     forceRootConfig: Boolean(options.forceRootConfig),

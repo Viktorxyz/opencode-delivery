@@ -99,9 +99,9 @@ async function planManagedFile({ entry, repoRoot, lock, allowUnowned }) {
   };
 }
 
-export async function planFileInstall({ repoRoot, lock, allowUnowned = false }) {
+export async function planFileInstall({ repoRoot, lock, allowUnowned = false, catalog = CATALOG }) {
   const plan = [];
-  for (const entry of CATALOG) {
+  for (const entry of catalog) {
     plan.push(await planManagedFile({ entry, repoRoot, lock, allowUnowned }));
   }
   return plan;

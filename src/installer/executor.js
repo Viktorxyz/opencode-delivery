@@ -15,7 +15,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { CATALOG, TEMPLATE_SET_ID } from "./catalog.js";
+import { CATALOG, filterCatalogByProfile, TEMPLATE_SET_ID } from "./catalog.js";
 import { PACKAGE_VERSION } from "../version.js";
 import {
   planFileInstall,
@@ -24,7 +24,7 @@ import {
   planRootConfigApply,
   planUninstall,
 } from "./planner.js";
-import { readValidatedLock, writeLock } from "./lock.js";
+import { readValidatedLock, writeLock, CURRENT_LOCK_SCHEMA } from "./lock.js";
 import { loadConfig, writeConfig, renderDefaultConfig } from "./config.js";
 import { bytesHashString } from "./hash.js";
 import { stableStringify } from "./json-pointer.js";
@@ -33,6 +33,7 @@ import { readRootConfig } from "./root-config.js";
 import { lockPath } from "./lock.js";
 import { executePlan } from "./transaction.js";
 import { migration } from "./migration.js";
+import { resolveProfile } from "../profile.js";
 
 async function readCurrentBytes(targetPath) {
   if (!existsSync(targetPath)) return null;
@@ -50,7 +51,7 @@ async function gatherAllTargets(repoRoot) {
   return out;
 }
 
-export async function previewInstall({ rootPath, replaceManaged, forceConfig, forceRootConfig }) {
+export async function previewInstall({ rootPath, profile = null, replaceManaged, forceConfig, forceRootConfig }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
@@ -66,11 +67,29 @@ export async function previewInstall({ rootPath, replaceManaged, forceConfig, fo
   const lock = validatedLock.lock;
   const migrationReport = await migration({ repoRoot, lock, forceRepair: false, detection });
 
+  // Resolve the active profile using the documented precedence
+  // (CLI > ship.config > lock > core). resolveProfile throws on
+  // any unknown source; the CLI surface maps that to exit 2.
+  const configResult = await loadConfig(repoRoot);
+  const configValue = configResult?.ok ? configResult.value : null;
+  const resolved = resolveProfile({
+    cli: profile,
+    config: configValue,
+    lock,
+  });
+
+  // Slice 1/12: every current entry ships in both profiles, so
+  // engineering and core produce the same plan for now. Once Matt
+  // + Superpowers workflow assets are added in later slices, those
+  // entries will declare `profiles: ["engineering"]` and the
+  // filter below will hide them from `init --profile core`.
+  const activeCatalog = filterCatalogByProfile(CATALOG, resolved.profile);
+
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
     migrationSeed: migrationReport?.proposedConfigSeed ?? null,
   });
-  const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged) });
+  const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged), catalog: activeCatalog });
   const migrationPlan = await planMigrationCleanup({
     repoRoot,
     lock,
@@ -82,7 +101,17 @@ export async function previewInstall({ rootPath, replaceManaged, forceConfig, fo
   const plan = [...(filePlan ?? []), ...migrationPlan, configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
   const summary = summarise(plan);
-  return { ok: true, repoRoot, detection, lock, plan, conflicts, summary, migrationReport };
+  return {
+    ok: true,
+    repoRoot,
+    detection,
+    lock,
+    profile: resolved,
+    plan,
+    conflicts,
+    summary,
+    migrationReport,
+  };
 }
 
 export async function previewUninstall({ rootPath }) {
@@ -119,7 +148,7 @@ function summarise(plan) {
   return counts;
 }
 
-async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
+async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, profile = null }) {
   const files = [];
   const remain = lock?.files?.filter((f) => !plan.some((op) => op?.relPath === f.path)) ?? [];
 
@@ -154,12 +183,16 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan }) {
     || (lock?.manager?.rootDocuments && lock.manager.rootDocuments.length > 0);
 
   return {
-    contractVersion: 1,
+    contractVersion: CURRENT_LOCK_SCHEMA,
     manager: {
-      schemaVersion: 1,
+      schemaVersion: CURRENT_LOCK_SCHEMA,
       name: "opencode-ship",
       version: process.env.OPENCODE_SHIP_VERSION ?? PACKAGE_VERSION,
       templateSet: TEMPLATE_SET_ID,
+      // Newly written locks always carry the resolved profile so
+      // future CLI invocations without --profile still resolve to
+      // the same choice through the lock-precedence layer.
+      profile: profile ?? lock?.manager?.profile,
       appliedAt: new Date().toISOString(),
       config: {
         path: ".opencode/ship.config.json",
@@ -207,6 +240,7 @@ export async function commitInstall(preview, { json, command }) {
     lock: preview.lock,
     configPlan,
     rootPlan,
+    profile: preview.profile?.profile,
   });
 
   const txPlan = await stageFiles(fileOnly, repoRoot);

@@ -52,6 +52,7 @@ export async function runDiff(options) {
   }
   const preview = await previewInstall({
     rootPath: options.rootPath ?? null,
+    profile: options.profile ?? null,
     replaceManaged: false,
     forceConfig: false,
     forceRootConfig: false,
