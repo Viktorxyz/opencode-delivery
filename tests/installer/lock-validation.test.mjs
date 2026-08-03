@@ -43,8 +43,11 @@ function sealIntegrity(lock) {
 }
 
 test("CURRENT_LOCK_SCHEMA: declared and stable", () => {
-  assert.equal(CURRENT_LOCK_SCHEMA, 1);
-  assert.equal(lockSchemaRevision(), 1);
+  // Schema was bumped to 2 when lock profile became required on new
+  // locks (issue #18). v1 locks are still accepted as legacy core;
+  // see lock-profile.test.mjs for the dedicated legacy assertions.
+  assert.equal(CURRENT_LOCK_SCHEMA, 2);
+  assert.equal(lockSchemaRevision(), 2);
 });
 
 test("validateLock: null lock is treated as a fresh install", () => {
