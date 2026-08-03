@@ -93,13 +93,16 @@ test("docs: THIRD_PARTY_NOTICES.md matches the current package version and the e
   const notices = readText("THIRD_PARTY_NOTICES.md");
   const pkg = readJSON("package.json");
   const versionPattern = pkg.version.replace(/\./g, "\\.");
-  // The file may wrap text across lines, so allow any whitespace
-  // (including newlines) between "version does" and "not bundle".
   assert.match(
     notices,
-    new RegExp(`opencode-ship@${versionPattern}[\\s\\S]*?does\\s+not bundle third-party skill content`),
+    new RegExp(`opencode-ship@${versionPattern}`),
+    "notices must reference the current package version",
   );
+  // The notices must reference the engineering profile and at
+  // least one license surface (e.g. mattpocock/skills or the
+  // vendor/mattpocock/LICENSE file).
   assert.match(notices, /engineering.*profile/);
+  assert.match(notices, /mattpocock/i);
 });
 
 test("source tree: no source file hard-codes the current version", async () => {

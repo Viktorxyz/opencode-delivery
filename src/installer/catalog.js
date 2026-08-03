@@ -80,6 +80,22 @@ export const CATALOG = [
     mode: 0o644,
     profiles: ["core", "engineering"],
   },
+  {
+    id: "skill:triage",
+    kind: "skill",
+    path: ".opencode/skills/triage/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/triage/SKILL.md"),
+    mode: 0o644,
+    profiles: ["engineering"],
+  },
+  {
+    id: "skill:grill-with-docs",
+    kind: "skill",
+    path: ".opencode/skills/grill-with-docs/SKILL.md",
+    source: resolve(packageRoot, "assets/skills/grill-with-docs/SKILL.md"),
+    mode: 0o644,
+    profiles: ["engineering"],
+  },
 ];
 
 /**

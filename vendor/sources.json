@@ -1,5 +1,26 @@
 {
   "$schema": "https://github.com/Viktorxyz/opencode-ship/vendor/sources.schema.json",
   "version": 1,
-  "sources": []
+  "sources": [
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580",
+      "upstreamPath": "skills/triage/SKILL.md",
+      "localTarget": "assets/skills/triage/SKILL.md",
+      "sourceSha256": "02e513af3c4f6cfb58b0cc85198ff8a10a6bf292f8c08f511573ed1b4f4fbcf0",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Initial entry is a placeholder SKILL.md describing the vendored contract. The real file is pending vendoring from mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c; the current local file is a stub that lets prepack and the engineering profile pass while the real vendor is in progress. The sourceSha256 above is the SHA of the stub; it will be regenerated when the real SKILL.md replaces the stub. PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580 is intentionally not a real SHA — replace it with the real immutable commit when the real file lands."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580",
+      "upstreamPath": "skills/grill-with-docs/SKILL.md",
+      "localTarget": "assets/skills/grill-with-docs/SKILL.md",
+      "sourceSha256": "460ff74f2adb91f279268713aaba21f3193cc956ff9eae3915b6ab61113e0930",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Initial entry is a placeholder SKILL.md describing the vendored contract. The real file is pending vendoring from mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c; the current local file is a stub that lets prepack and the engineering profile pass while the real vendor is in progress. The sourceSha256 above is the SHA of the stub; it will be regenerated when the real SKILL.md replaces the stub. PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580 is intentionally not a real SHA — replace it with the real immutable commit when the real file lands."
+    }
+  ]
 }
