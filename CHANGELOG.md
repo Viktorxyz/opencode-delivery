@@ -2,6 +2,24 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.4.0 — Profile-aware installer foundation
+
+`opencode-ship@0.4.0` adds the profile-aware installer foundation that issue #18 requires. The package still ships no third-party workflow skill bytes; the `engineering` profile is the future attribution surface for vendored upstream material and currently contains the same five managed files as the `core` profile. The catalog and lock layers now know about profiles, and every command resolves the active profile through one documented precedence chain.
+
+### Verification
+
+- `npm run verify` exits `0` with 226 tests across 34 suites on the v0.4 HEAD.
+
+### Added
+
+- **Profile model.** `src/profile.js` declares `PROFILES = ["core", "engineering"]` and exports `resolveProfile({ cli, config, lock })` for the documented precedence (CLI > ship.config > lock > default). Unknown profiles throw a descriptive `Error` so the CLI can surface them as `exit 2`.
+- **`--profile` CLI flag.** Every subcommand (`init`, `diff`, `update`, `doctor`, `uninstall`) accepts `--profile <name>`; parse errors emit to `stderr` and return `exit 2`.
+- **Lock schema v2.** `CURRENT_LOCK_SCHEMA` is bumped to 2. Newly written locks always carry `manager.profile`; v1 locks (no profile field) still validate as legacy core so v0.3 consumers can upgrade without manual migration. The `ship-lock.schema.json` `enum` allows `[1, 2]` for both `contractVersion` and `manager.schemaVersion`.
+- **`ship.config.json .profile`.** The user config schema accepts an optional `profile` enum (`core | engineering`). The profile is loaded by the same precedence chain as the lock.
+- **Profile-aware catalog.** Every `CATALOG` entry declares a `profiles` array. `filterCatalogByProfile(catalog, profile)` returns the subset that ships under the active profile; `validateCatalog` rejects entries that reference unknown profiles.
+- **Profile-aware doctor.** The new `profile footprint` check scopes asset presence to the active profile; `package integrity` continues to check the full catalog so the maintainer can still see drift in the other profile.
+- **Error to `stderr`.** CLI argument-parsing errors are now written to `stderr` (was `stdout`) so consumers can detect parse failures by exit code alone.
+
 ## 0.3.0 — Installer hardening and release pipeline
 
 `opencode-ship@0.3.0` hardens the installer for the public registry. This is the v0.3 installer foundation with the `core` profile only; it carries no third-party workflow skill bytes. The package is now fully consumable from npm with provenance. The catalog installs the five managed files plus the two generated artifacts (`ship.config.json`, `ship.lock.json`), and adds tighter guards around every existing one. The plugin target is `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the plural directory; root-config pointer ownership is recorded for every installer-owned entry so the future v0.4 opt-in `engineering` profile can restore previous values on uninstall. v0.3 is the approved slice shipped by parent spec `Viktorxyz/opencode-ship#16` and plan revision `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be`.

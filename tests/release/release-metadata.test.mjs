@@ -74,20 +74,32 @@ test("docs: shipping docs reference the approved engineering-workflow plan", () 
   }
 });
 
-test("docs: README and CHANGELOG report 190 tests for the v0.3 verification baseline", () => {
+test("docs: README and CHANGELOG report 226 tests for the v0.4 verification baseline", () => {
   const changelog = readText("CHANGELOG.md");
   const readme = readText("README.md");
   for (const [name, text] of [["CHANGELOG.md", changelog], ["README.md", readme]]) {
-    assert.ok(text.includes("190"), `${name} must report the 190-test verification baseline`);
+    assert.ok(text.includes("226"), `${name} must report the 226-test verification baseline`);
     assert.ok(!/184 tests/.test(text), `${name} must not report the obsolete 184-test baseline`);
+    // CHANGELOG.md legitimately records the historic 190-test
+    // baseline under the v0.3.0 section; we only require that
+    // README.md does not reference the obsolete number.
+    if (name === "README.md") {
+      assert.ok(!/190 tests/.test(text), `${name} must not report the obsolete 190-test baseline`);
+    }
   }
 });
 
-test("docs: THIRD_PARTY_NOTICES.md is empty in v0.3.0 and names the v0.4 attribution profile", () => {
+test("docs: THIRD_PARTY_NOTICES.md matches the current package version and the engineering profile", () => {
   const notices = readText("THIRD_PARTY_NOTICES.md");
-  assert.match(notices, /opencode-ship@0\.3\.0/);
-  assert.match(notices, /opencode-ship@0\.3\.0.*does not bundle third-party skill content/i);
-  assert.match(notices, /v0\.4.*engineering.*profile/);
+  const pkg = readJSON("package.json");
+  const versionPattern = pkg.version.replace(/\./g, "\\.");
+  // The file may wrap text across lines, so allow any whitespace
+  // (including newlines) between "version does" and "not bundle".
+  assert.match(
+    notices,
+    new RegExp(`opencode-ship@${versionPattern}[\\s\\S]*?does\\s+not bundle third-party skill content`),
+  );
+  assert.match(notices, /engineering.*profile/);
 });
 
 test("source tree: no source file hard-codes the current version", async () => {
