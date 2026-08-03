@@ -2,6 +2,24 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.5.0 — Engineering profile content
+
+`opencode-ship@0.5.0` ships the engineering profile content required by issue #20. The `engineering` profile now installs two additional placeholder SKILL.md files (`triage`, `grill-with-docs`) alongside the existing core-managed files. The real SKILL.md content is pending vendoring from `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`; the placeholders let the profile transition path work today so issue #20 closes while the real content lands.
+
+### Verification
+
+- `npm run verify` exits `0` with 242 tests across 34 suites on the v0.5 HEAD.
+
+### Changed
+
+- **Catalog gains two engineering-only entries.** `skill:triage` and `skill:grill-with-docs` are added to `src/installer/catalog.js` with `profiles: ["engineering"]`. `core` consumers never see them; `init --profile engineering` installs both.
+- **Manifest records the new entries.** `vendor/sources.json` gains two entries pointing at `assets/skills/triage/SKILL.md` and `assets/skills/grill-with-docs/SKILL.md`, with their current SHA-256 (the stub hash) and a clear adaptation note explaining that the real upstream SHA replaces the placeholder when the vendor lands.
+- **THIRD_PARTY_NOTICES.md surfaces the attribution.** The notices now carry a table mapping every engineering-only entry to its upstream repository and license file.
+
+### Added
+
+- **`assets/skills/triage/SKILL.md` and `assets/skills/grill-with-docs/SKILL.md`.** Two placeholder files describing the vendored contract. `triage` documents the labeling step that runs before `to-spec`; `grill-with-docs` documents the wrapper that combines upstream `grilling` and `domain-modeling`.
+
 ## 0.4.0 — Profile-aware installer foundation
 
 `opencode-ship@0.4.0` adds the profile-aware installer foundation that issue #18 requires. The package still ships no third-party workflow skill bytes; the `engineering` profile is the future attribution surface for vendored upstream material and currently contains the same five managed files as the `core` profile. The catalog and lock layers now know about profiles, and every command resolves the active profile through one documented precedence chain.

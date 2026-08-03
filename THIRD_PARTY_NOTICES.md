@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-`opencode-ship@0.4.0` ships the profile-aware installer foundation
+`opencode-ship@0.5.0` ships the profile-aware installer foundation
 (`core` and `engineering` profiles). The `core` profile ships only
 opencode-ship-authored content (two delivery agents, two workflow
 skills). The `engineering` profile vendors material from
