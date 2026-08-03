@@ -103,9 +103,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
-          npm publish "${tarball}" --access public --provenance --tag latest
+          # Use the ./ prefix so npm 11.5.2's npa parser treats the
+          # argument as a local file tarball instead of trying to
+          # resolve it as a git spec.
+          npm publish "./${tarball}" --access public --provenance --tag latest
 
       - name: publish release
         uses: softprops/action-gh-release@v2
