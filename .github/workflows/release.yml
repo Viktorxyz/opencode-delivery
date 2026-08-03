@@ -105,6 +105,11 @@ jobs:
             exit 2
           fi
 
+- name: debug OIDC env
+        shell: bash
+        run: |
+          env | grep -iE "ACTIONS_|NODE_|GITHUB_|npm_" | sort
+
       - name: publish to npm
         shell: bash
         env:
@@ -116,7 +121,6 @@ jobs:
           NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
-          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
           # Use the ./ prefix so npm 11.5.2's npa parser treats the
           # argument as a local file tarball instead of trying to
