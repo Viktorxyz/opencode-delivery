@@ -107,18 +107,25 @@ jobs:
 
       - name: debug OIDC env
         shell: bash
+        env:
+          NODE_AUTH_TOKEN: ""
+          NPM_CONFIG_USERCONFIG: /dev/null
+          npm_config_always_auth: "false"
         run: |
           env | grep -iE "ACTIONS_|NODE_|GITHUB_|npm_" | sort
 
       - name: publish to npm
         shell: bash
         env:
-          # actions/setup-node@v4 auto-injects NODE_AUTH_TOKEN from
-          # GITHUB_TOKEN for backward compatibility. That makes npm
-          # use the token instead of the OIDC trusted publisher, which
-          # fails with E404 because the GITHUB_TOKEN lacks publish
-          # scope. Force OIDC by clearing NODE_AUTH_TOKEN.
+          # actions/setup-node@v4 writes a temp .npmrc with
+          # `always-auth=true` and an empty `_authToken=`. With
+          # always-auth=true npm uses the (empty) token instead of
+          # OIDC trusted publishing. Force npm to fall through to
+          # OIDC by clearing both auth signal env vars and overriding
+          # the npmrc to one without always-auth.
           NODE_AUTH_TOKEN: ""
+          NPM_CONFIG_USERCONFIG: /dev/null
+          npm_config_always_auth: "false"
         run: |
           set -euo pipefail
           tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
