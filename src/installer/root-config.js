@@ -23,7 +23,64 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setPointer, getPointer, stableStringify } from "./json-pointer.js";
 import { bytesHashString } from "./hash.js";
-import { POINTER_ENTRIES } from "./catalog.js";
+
+export const POINTER_ENTRIES = [
+  {
+    pointer: "/agent/build/permission/delivery_inspect",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_issue",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_worktree",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_verify",
+    strategy: "value",
+    value: "deny",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_review",
+    strategy: "value",
+    value: "deny",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_pr",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_ready",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_merge",
+    strategy: "value",
+    value: "ask",
+  },
+  {
+    pointer: "/agent/build/permission/delivery_cleanup",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/task/delivery-reviewer",
+    strategy: "value",
+    value: "allow",
+  },
+  {
+    pointer: "/agent/build/permission/task/delivery-verifier",
+    strategy: "value",
+    value: "allow",
+  },
+];
 
 const ROOT_PATH_CANDIDATES = ["opencode.json", "opencode.jsonc"];
 
@@ -221,6 +278,9 @@ export function formatRootConfigPreserving(value) {
  * original ordering.
  */
 export function parseRootConfigPreservingOrder(text) {
+  if (typeof text !== "string" || text.length === 0) {
+    return { value: {}, format: "json" };
+  }
   const parser = new RootConfigParser(text);
   const value = parser.parseValue(0, /*atTop*/ true);
   const isJsonc = text.includes("//") || text.includes("/*");

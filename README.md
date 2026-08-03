@@ -2,7 +2,7 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.2.0. The installer is now a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. All 150 tests and the packed-artifact smoke check pass under `npm run verify`.
+> **Status:** v0.3.0 installer foundation. The installer is a `pnpm dlx opencode-ship@latest <cmd>` workflow. Five idempotent CLI commands manage a managed-file lock, a transactional promoter, and a compiled ESM plugin that registers the canonical nine `delivery_*` tools. Post-merge cleanup is immediate and recoverable. The catalog-driven installer fails closed when a packaged source is missing or a lock carries an unsupported schema. The plugin target is `.opencode/plugins/opencode-ship.js`; OpenCode auto-loads plugins from the plural directory. v0.3 records every installer-owned root pointer; v0.4 restores ownership on uninstall and ships the opt-in `engineering` profile that turns this distribution into the canonical workflow defined by approved plan `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be` (`Viktorxyz/opencode-ship#16`).
 
 ---
 
@@ -10,7 +10,7 @@
 
 `opencode-ship` is the npm-distributed successor to `opencode-delivery`. It bundles:
 
-- a **nine-tool OpenCode plugin** that auto-loads from `.opencode/plugin/opencode-ship.js`;
+- a **nine-tool OpenCode plugin** that auto-loads from `.opencode/plugins/opencode-ship.js`;
 - a **lifecycle state machine** for one issue → one worktree → one PR → one merge → one cleanup;
 - a **Git worktree driver** (no rebase-after-push, no force-push, no `--force-with-lease`);
 - a **GitHub CLI driver** that talks only to typed `gh pr/issue` verbs (never `gh api`);
@@ -18,7 +18,7 @@
 - **reviewer** and **verifier** subagents, both with strictly bounded `delivery_*` permissions;
 - a **delivery-workflow** skill that drives the canonical lifecycle;
 - a **planning-research-checkpoint** skill that offers a single, optional Deep Research gate per non-trivial plan;
-- a **delivery doctor** that validates the adapter, package pin, and OpenCode compatibility;
+- a **delivery doctor** that walks every catalog entry to verify install state and lock consistency;
 - an **install/doctor/diff/update/uninstall** CLI with stable exit codes and `--json` envelopes;
 - a **.opencode/ship.lock.json** lock that records managed paths, hashes, and the installer-owned JSON pointers;
 - **recovery** for interrupted cleanup, half-written state files, and stale worktrees.
@@ -28,6 +28,8 @@ The package **does not** own:
 - package managers, test commands, linters, docs layout, or CI templates;
 - issue-label catalogues, release scripts, or deploy hooks;
 - framework- or language-specific expertise.
+
+The only source tree that ships in the npm tarball is `assets/`. Anything copied under `dist/`, `schema/`, `docs/`, or the top-level `THIRD_PARTY_NOTICES.md` is part of the installable distribution. The `assets/` directory is the single canonical managed-asset source for the catalog; nothing else provides packaged agents or skills.
 
 ## Distribution
 
@@ -44,15 +46,15 @@ pnpm dlx opencode-ship@latest uninstall # remove only the files still matching t
 If you want to try a pre-release tarball locally without publishing to npm:
 
 ```bash
-pnpm dlx --package=/absolute/path/opencode-ship-0.2.0.tgz opencode-ship init
+pnpm dlx --package=/absolute/path/opencode-ship-0.3.0.tgz opencode-ship init
 ```
 
-The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user. Use `--force-root-config` on `init` to create a minimal `opencode.json` if the consumer has none.
+The plugin auto-discovers from `.opencode/plugins/opencode-ship.js`; the consumer does not add a plugin entry to `opencode.json`. The installer merges only Build-agent permissions into the root `opencode.json` (or `.jsonc`); all other root-config fields remain owned by the user. Use `--force-root-config` on `init` to create a minimal `opencode.json` if the consumer has none.
 
 ### Managed file layout
 
 ```
-.opencode/plugin/opencode-ship.js
+.opencode/plugins/opencode-ship.js
 .opencode/agents/delivery-reviewer.md
 .opencode/agents/delivery-verifier.md
 .opencode/skills/delivery-workflow/SKILL.md
@@ -60,6 +62,8 @@ The plugin auto-discovers from `.opencode/plugin/opencode-ship.js`; the consumer
 .opencode/ship.config.json     # user-owned; written by `init` only if absent
 .opencode/ship.lock.json       # installer-managed; drives update + uninstall
 ```
+
+These seven files (five managed plus two generated) form the default `core` install footprint. The opt-in `engineering` profile installs additional assets through the same catalog; the installer’s catalog and doctor both read from `assets/` so adding new managed files never requires rewriting the doctor or installer entry points. v0.3 ships the `core` profile only.
 
 ### Schema files
 
@@ -72,6 +76,8 @@ These JSON Schemas are published and discoverable through the `exports` map:
 ### Legacy migration
 
 Existing consumers of `opencode-delivery@0.1.x` (commit-pinned shim) can run `pnpm dlx opencode-ship@latest init` from the same checkout. Migration recognises `.opencode/delivery.json`, `.opencode/delivery.lock.json`, the two canonical agents, and the generic plugin `.opencode/plugin/delivery.ts`, and adopts them when their bytes match. Legacy artifacts are preserved on disk so a downgrade remains possible; the installer does NOT modify Leo or any other consumer.
+
+`diff` is now strictly read-only; it reports every change but never writes to disk, even when the migration phase has a candidate seed-config to plant.
 
 ## Lifecycle
 
@@ -100,12 +106,12 @@ Existing consumers of `opencode-delivery@0.1.x` (commit-pinned shim) can run `pn
 | `1` | expected negative result (`diff` saw changes; `doctor` unhealthy) |
 | `2` | invalid input, unsupported project, ambiguous detection |
 | `3` | ownership / hash / structural conflict |
-| `4` | filesystem, staging, rollback, or transaction failure |
+| `4` | filesystem, staging, rollback, or transaction failure; also surfaced when a catalog source is missing |
 | `5` | unsupported lock/config schema |
 
 ## Development
 
-`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. 150 tests cover lifecycle, drivers, recovery, doctor, agents, the installer CLI, plugin registration, the isolated packed-artifact smoke check, and the order-preserving root-config merge.
+`npm run verify` runs `format:check`, `lint`, `typecheck`, `build`, and the auto-discovered test suite. The tests cover the installer CLI, the lock and root-config planners, the catalog validator, the schema validator, agents, the packed-artifact smoke check, the transaction-recovery contract, and the order-preserving root-config merge. v0.3 ships with 190 tests across 34 suites on the approved plan hash `f85bae931d9eed7763e2f6f4dc68e5fad71bdd38c8a667fc9ffe78b5290200be`.
 
 ```
 npm ci
@@ -113,19 +119,19 @@ npm run build
 npm run verify
 ```
 
-The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent.
+The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent. The temporary config lives at `.tmp/tsconfig.dts.json`, under the gitignored `.tmp/` directory, so a tracked config file is never accidentally committed.
 
 ## Status and licensing
 
 - **License:** MIT. See `LICENSE`.
-- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. Subsequent releases follow standard `<major>.<minor>.<patch>` rules.
+- **Versioning:** SemVer. v0.2.0 is the first npm-distributed release. v0.3.0 is the installer foundation with core-only defaults. v0.4.0 adds the opt-in `engineering` profile that completes the approved `engineering-workflow-v0.4` plan.
 - **Compatibility:** the bundled plugin targets `@opencode-ai/plugin >= 1.15.5 < 2` and OpenCode `>= 1.15.5`.
 
 ## FAQ
 
 **Is the package on npm?**
 
-Not yet. The repository is a draft PR. Once the release workflow lands, the first published tag will produce a GitHub Release tarball and (optionally) an npm release. Until then, install from a local tarball with `pnpm dlx --package=…`.
+Yes, `opencode-ship` is published as a public npm package. The release workflow at `.github/workflows/release.yml` validates the tag against `package.json`, packs a single tarball, publishes that tarball to npm (`--access public --provenance`), and uploads the same tarball as the GitHub Release asset. Consumers who cannot reach npm can run from the GitHub tarball URL shown in the release body.
 
 **Where is the `@opencode-ai/plugin` dependency?**
 
@@ -133,4 +139,12 @@ The plugin is bundled (`scripts/build.mjs` does not externalize it). Consumers d
 
 **What does `init` actually write?**
 
-It writes (or refreshes) the seven managed files in `.opencode/`, the user-owned `ship.config.json`, and the integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so.
+It writes (or refreshes) five managed files in `.opencode/`, plus the user-owned `ship.config.json` and integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so. The catalog validator runs first and exits `4` if a packaged source is missing, so the installer refuses to materialise a half-built state.
+
+**Where does the lock live and how is it integrity-checked?**
+
+`.opencode/ship.lock.json`. Every recorded file path, sha256, and pointer hash is rolled up into `integrity.lockSha256`. The installer refuses to write or apply updates against a tampered or schema-incompatible lock (`exit 3` for tampering, `exit 5` for an unsupported schema). Downgrading the schema is non-trivial; the lock schema version is part of the contract.
+
+**What is the canonical source tree?**
+
+`assets/` is the only path that ends up in the npm tarball alongside `dist/`, `schema/`, `docs/`, and `THIRD_PARTY_NOTICES.md`. The packaged plugin reads agent and skill bytes from `assets/agents/` and `assets/skills/`; the catalog declares these paths up front, and the doctor walks the catalog to verify install state. Anything copied under root `agents/` or `skills/` during local development is a build convenience, not part of the installable distribution.

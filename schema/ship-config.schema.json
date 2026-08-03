@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Viktorxyz/opencode-delivery/schema/ship-config.schema.json",
+  "$id": "https://github.com/Viktorxyz/opencode-ship/schema/ship-config.schema.json",
   "title": "opencode-ship user config",
   "type": "object",
   "required": ["schemaVersion"],

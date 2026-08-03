@@ -40,7 +40,7 @@ with three surfaces:
 
 Five output classes are installer-managed and recorded in the lock:
 
-- `.opencode/plugin/opencode-ship.js` — the bundled plugin.
+- `.opencode/plugins/opencode-ship.js` — the bundled plugin.
 - `.opencode/agents/delivery-reviewer.md`,
   `.opencode/agents/delivery-verifier.md`.
 - `.opencode/skills/delivery-workflow/SKILL.md`,

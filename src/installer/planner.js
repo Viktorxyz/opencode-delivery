@@ -32,8 +32,7 @@ import {
   getPointer,
   stableStringify,
 } from "./json-pointer.js";
-import { POINTER_ENTRIES } from "./catalog.js";
-import { applyOwnedPointers } from "./root-config.js";
+import { POINTER_ENTRIES, applyOwnedPointers } from "./root-config.js";
 import { findRootConfig, readRootConfig, defaultRootConfigPath } from "./root-config.js";
 
 async function readBytes(path) {
@@ -108,6 +107,37 @@ export async function planFileInstall({ repoRoot, lock, allowUnowned = false }) 
   return plan;
 }
 
+export async function planMigrationCleanup({ repoRoot, lock, migrationReport, allowUnowned = false }) {
+  const action = migrationReport?.actions?.find((entry) => entry.kind === "candidate-remove-legacy-plugin-path");
+  if (!action) return [];
+
+  const relPath = ".opencode/plugin/opencode-ship.js";
+  const target = `${repoRoot}/${relPath}`;
+  const current = await readBytes(target);
+  if (!current) return [];
+
+  const locked = lookupLockedFile(lock, relPath);
+  if (locked?.sha256 === current.hash || allowUnowned) {
+    return [{
+      kind: "delete",
+      op: "file",
+      target,
+      relPath,
+      reason: "remove the lock-owned v0.2 singular plugin path",
+    }];
+  }
+
+  return [{
+    kind: "conflict",
+    op: "file",
+    target,
+    relPath,
+    currentSha: current.hash,
+    previousSha: locked?.sha256 ?? null,
+    reason: "legacy singular plugin is unowned or locally modified",
+  }];
+}
+
 export async function planUninstall({ repoRoot, lock }) {
   if (!lock) return [];
   const plan = [];
@@ -127,7 +157,7 @@ export async function planUninstall({ repoRoot, lock }) {
   return plan;
 }
 
-export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite }) {
+export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite, migrationSeed = null }) {
   const existing = await loadConfig(repoRoot);
   if (existing?.ok && !forceOverwrite) {
     return {
@@ -141,10 +171,15 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
       reason: "user config already present",
     };
   }
-  const desiredValue = renderDefaultConfig(detection);
+  const desiredValue = migrationSeed ?? renderDefaultConfig(detection);
   const desiredJson = JSON.stringify(desiredValue, null, 2) + "\n";
   const desiredSha = bytesHashString(desiredJson);
   const kind = existing?.ok && forceOverwrite ? "update" : "create";
+  const reason = existing?.ok
+    ? "user config overwritten via --force-config"
+    : migrationSeed
+      ? "synthesising a default config from legacy adapter migration"
+      : "synthesising a default config from detection";
   return {
     kind,
     op: "config",
@@ -154,7 +189,7 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
     desiredSha,
     bytes: Buffer.from(desiredJson, "utf8"),
     configValue: desiredValue,
-    reason: existing?.ok ? "user config overwritten via --force-config" : "synthesising a default config from detection",
+    reason,
   };
 }
 
@@ -165,10 +200,19 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
 
   const fileMissing = !existsSync(target);
   if (fileMissing && !forceRepair) {
+    const seededRecords = (previous?.pointers && previous.pointers.length > 0)
+      ? previous.pointers
+      : POINTER_ENTRIES.map((entry) => ({
+        pointer: entry.pointer,
+        strategy: entry.strategy,
+        installedSha256: bytesHashString(stableStringify(entry.value)),
+        previous: { existed: false },
+      }));
     return {
       kind: "noop", op: "root-config", target, relPath: detected.relative,
       reason: "no root opencode.json present",
       edits: [],
+      pointerRecords: seededRecords,
     };
   }
   if (fileMissing && forceRepair) {
@@ -176,7 +220,12 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     const doc = synthesizeDefaultRootConfig();
     const bytes = Buffer.from(formatRootConfig(doc), "utf8");
     const newSha = bytesHashString(stableStringify(doc));
-    const installedPointers = [];
+    const installedPointers = POINTER_ENTRIES.map((entry) => ({
+      pointer: entry.pointer,
+      strategy: entry.strategy,
+      installedSha256: bytesHashString(stableStringify(entry.value)),
+      previous: { existed: false },
+    }));
     return {
       kind: "create",
       op: "root-config",
@@ -185,7 +234,7 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
       bytes,
       desiredSha: newSha,
       currentSha: null,
-      edits: [{ kind: "create", pointer: "(file)", value: "(created)" }],
+      edits: installedPointers.map((p) => ({ kind: "create", pointer: p.pointer, value: "(synthesized)" })),
       pointerRecords: installedPointers,
       format: "json",
       document: doc,
@@ -198,10 +247,34 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
       kind: "noop", op: "root-config", target, relPath: detected.relative,
       reason: `root config ${docResult.error.kind}`,
       edits: [],
+      pointerRecords: previous?.pointers ?? [],
     };
   }
   const previousPointers = previous?.pointers ?? [];
   const result = applyOwnedPointers(docResult.value, { allowEqualValues: true });
+  if (result.applied.length === 0 && result.skipped.every((s) => s.reason === "already equal")) {
+    const ownedPointers = previousPointers.length > 0
+      ? previousPointers
+      : POINTER_ENTRIES.map((entry) => {
+          const existing = getPointer(docResult.value, entry.pointer);
+          return {
+            pointer: entry.pointer,
+            strategy: entry.strategy,
+            installedSha256: bytesHashString(stableStringify(existing ?? entry.value)),
+            previous: existing === undefined ? { existed: false } : { existed: true, value: existing },
+          };
+        });
+    return {
+      kind: "noop", op: "root-config", target, relPath: detected.relative,
+      reason: "no installer-owned entries missing",
+      edits: [],
+      pointerRecords: ownedPointers,
+      format: docResult.format,
+      document: docResult.value,
+      currentSha: docResult.sha256 ?? null,
+      desiredSha: docResult.sha256 ?? null,
+    };
+  }
   /** @type {Array<{kind: string; pointer: any; reason?: any; existing?: any; desired?: any; value?: any}>} */
   const edits = result.applied.map((a) => ({
     kind: "create", pointer: a.pointer, value: a.value,
@@ -216,8 +289,8 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
   let bytes;
   let docForWrite = result.doc;
   try {
-    const { value: sourceValue, format: sourceFormat } = parseRootConfigPreservingOrder(docResult.raw);
-    docForWrite = sourceValue;
+    const { value: sourceValue, format: sourceFormat } = parseRootConfigPreservingOrder(docResult.raw ?? "");
+    docForWrite = sourceValue && typeof sourceValue === "object" ? sourceValue : result.doc;
     for (const entry of result.applied) {
       docForWrite = setPointer(docForWrite, entry.pointer, entry.value);
     }
@@ -240,6 +313,16 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     };
     if (idx >= 0) installedPointers[idx] = next;
     else installedPointers.push(next);
+  }
+  for (const e of result.skipped) {
+    if (e.reason !== "already equal") continue;
+    const idx = installedPointers.findIndex((p) => p.pointer === e.pointer);
+    if (idx >= 0) continue;
+    installedPointers.push({
+      pointer: e.pointer, strategy: "value",
+      installedSha256: bytesHashString(stableStringify(e.existing ?? null)),
+      previous: { existed: true, value: e.existing },
+    });
   }
   return {
     kind: edits.some((e) => e.kind === "conflict") ? "conflict" : (edits.length ? "update" : "noop"),

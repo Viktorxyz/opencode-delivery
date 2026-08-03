@@ -1,7 +1,7 @@
 /*
  * opencode-ship plugin entry point.
  *
- * Registered when opencode auto-discovers `.opencode/plugin/opencode-ship.js`
+ * Registered when opencode auto-discovers `.opencode/plugins/opencode-ship.js`
  * (no consumer-side wrapper) or when shipped as the `opencode-ship` npm
  * package. The plugin does not assume a hard-coded repository, owner,
  * or model; every value is resolved at runtime from the consumer
@@ -37,8 +37,7 @@ import { readLock } from "./installer/lock.js";
 import { detectProject } from "./installer/detection/project.js";
 import { tryImmediateCleanup, listPending } from "./installer/cleanup.js";
 import { flattenShipConfig } from "./installer/ship-adapter.js";
-
-const VERSION = process.env.OPENCODE_SHIP_VERSION ?? "0.2.0";
+import { PACKAGE_VERSION } from "./version.js";
 
 const toolDefs = [
   ["delivery_inspect", "Inspect a manifest and a project-local doctor report.", "inspect"],
@@ -137,7 +136,7 @@ async function buildRuntime(worktree) {
     repoSlug: repoSlug ?? "owner/repo",
     owner,
     driver,
-    packageVersion: VERSION,
+    packageVersion: PACKAGE_VERSION,
     lastTaskId: null,
     cleanupQueueOnStartup: cleanup,
     recover: () => recoverManifestAfterCrash,

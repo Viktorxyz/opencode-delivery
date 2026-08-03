@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/* npm `prepack` hook: build first, fail closed if outputs are missing. */
+/* npm `prepack` hook: build first, validate catalog, fail closed if any
+ * required artifact is missing. */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -26,6 +27,17 @@ if (build.status !== 0) {
   fail(`build failed with exit ${build.status ?? "?"}`);
 }
 
+const catalogCheck = spawnSync("node", [
+  "--input-type=module",
+  "--no-warnings",
+  "-e",
+  `import { validateCatalog } from ${JSON.stringify(resolve(root, "src/installer/catalog.js"))};`
+  + "(async () => { try { validateCatalog(); } catch (e) { process.stderr.write('validateCatalog: ' + (e?.message ?? e) + '\\n'); process.exit(2); } })();",
+], { stdio: "inherit" });
+if (catalogCheck.status !== 0) {
+  fail(`catalog validation failed with exit ${catalogCheck.status ?? "?"}`);
+}
+
 for (const path of [
   "dist/plugin.js",
   "dist/cli.js",
@@ -33,8 +45,19 @@ for (const path of [
   "dist/plugin.d.ts",
   "dist/cli.d.ts",
   "dist/core.d.ts",
+  "assets/agents/delivery-reviewer.md",
+  "assets/agents/delivery-verifier.md",
+  "assets/skills/delivery-workflow/SKILL.md",
+  "assets/skills/planning-research-checkpoint/SKILL.md",
+  "schema/project-adapter.schema.json",
+  "schema/ship-config.schema.json",
+  "schema/ship-lock.schema.json",
+  "THIRD_PARTY_NOTICES.md",
+  "LICENSE",
+  "README.md",
+  "CHANGELOG.md",
 ]) {
   if (!existsSync(resolve(root, path))) {
-    fail(`expected build artifact missing: ${path}`);
+    fail(`expected packaged artifact missing: ${path}`);
   }
 }

@@ -24,9 +24,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readLock } from "./lock.js";
-import { loadConfig, writeConfig, renderDefaultConfig } from "./config.js";
-import { configPath } from "./config.js";
-import { flattenShipConfig } from "./ship-adapter.js";
+import { loadConfig, renderDefaultConfig } from "./config.js";
 
 function legacyAdapterPath(repoRoot) {
   return resolve(repoRoot, ".opencode", "delivery.json");
@@ -45,12 +43,14 @@ async function detectLegacyShapes(repoRoot) {
     adapter: false,
     legacyLock: false,
     plugin: false,
+    pluginOld: false,
     reviewer: false,
     verifier: false,
   };
   if (existsSync(legacyAdapterPath(repoRoot))) out.adapter = true;
   if (existsSync(legacyLockPath(repoRoot))) out.legacyLock = true;
   if (existsSync(legacyPluginPath(repoRoot))) out.plugin = true;
+  if (existsSync(resolve(repoRoot, ".opencode/plugin/opencode-ship.js"))) out.pluginOld = true;
   if (existsSync(resolve(repoRoot, ".opencode/agents/delivery-reviewer.md"))) out.reviewer = true;
   if (existsSync(resolve(repoRoot, ".opencode/agents/delivery-verifier.md"))) out.verifier = true;
   return out;
@@ -76,53 +76,71 @@ function isShimPluginEntry(opencodeDoc) {
   return null;
 }
 
-export async function migration({ repoRoot, lock, forceRepair }) {
+/**
+ * Detect legacy shapes and propose migration actions.
+ *
+ * The function is pure: it never writes to disk. Callers translate
+ * the returned `proposedConfigSeed` into a real config-write only
+ * when they have confirmed the user is committing (`init`, `update`,
+ * or the consumer rebuild). The legacy plugin file is reported for
+ * removal only when the new plugin path already exists, so a fresh
+ * consumer who never installed a previous release is never asked to
+ * remove anything.
+ */
+export async function migration({ repoRoot, lock, forceRepair, detection = null }) {
   const shapes = await detectLegacyShapes(repoRoot);
   const legacy = await readLegacyAdapter(repoRoot);
   const config = await loadConfig(repoRoot);
   const actions = [];
+  let proposedConfigSeed = null;
 
   if (legacy && !config?.ok) {
-    await writeConfig(repoRoot, legacyToShipConfig(legacy.value));
-    actions.push({ kind: "seeded-config", from: legacy.path });
+    proposedConfigSeed = legacyToShipConfig(legacy.value, detection);
+    actions.push({ kind: "candidate-seed-config", from: legacy.path });
   }
 
   if (legacy && shapes.legacyLock && !lock?.manager) {
     actions.push({ kind: "kept-legacy-lock", path: legacyLockPath(repoRoot) });
   }
 
-  if (shapes.plugin && existsSync(resolve(repoRoot, ".opencode/plugin/opencode-ship.js"))) {
+  if (shapes.plugin && existsSync(resolve(repoRoot, ".opencode/plugins/opencode-ship.js"))) {
     if (!forceRepair) {
       actions.push({ kind: "candidate-remove-legacy-plugin", path: legacyPluginPath(repoRoot) });
     }
   }
+  if (shapes.pluginOld) {
+    actions.push({ kind: "candidate-remove-legacy-plugin-path", path: resolve(repoRoot, ".opencode/plugin/opencode-ship.js") });
+  }
 
-  return { shapes, actions, legacyPresent: Boolean(legacy) };
+  return { shapes, actions, legacyPresent: Boolean(legacy), proposedConfigSeed };
 }
 
-export function legacyToShipConfig(legacy) {
-  if (!legacy || typeof legacy !== "object") return renderDefaultConfig({});
+export function legacyToShipConfig(legacy, detection = null) {
+  if (!legacy || typeof legacy !== "object") return renderDefaultConfig(detection ?? {});
+  const repoSlug = typeof legacy.repository?.repoSlug === "string"
+    ? legacy.repository.repoSlug
+    : detection?.repository ?? "owner/repo";
   return {
     schemaVersion: 1,
     project: {
-      remote: legacy.repository?.remote ?? "origin",
-      repository: legacy.repository?.defaultBranch?.name
-        ?? legacy.repository?.remote
-        ?? "owner/repo",
-      defaultBranch: legacy.repository?.defaultBranch?.name ?? "main",
-      packageManager: "npm",
+      remote: legacy.repository?.remote ?? detection?.remote ?? "origin",
+      repository: repoSlug,
+      defaultBranch: legacy.repository?.defaultBranch?.name ?? detection?.defaultBranch ?? "main",
+      packageManager: detection?.packageManager ?? "pnpm",
       detectOverrides: false,
     },
     delivery: {
       worktree: {
         root: legacy.worktree?.root ?? ".worktrees",
         branchTemplate: legacy.worktree?.branchTemplate ?? "{actor}/{slug}",
-        bootstrap: Array.isArray(legacy.worktree?.bootstrap) ? legacy.worktree.bootstrap : [["npm", "install"]],
+        bootstrap: Array.isArray(legacy.worktree?.bootstrap) && legacy.worktree.bootstrap.length
+          ? legacy.worktree.bootstrap
+          : [["pnpm", "install", "--frozen-lockfile"]],
       },
       verification: {
-        commands: legacy.verification?.commands?.length
+        commands: Array.isArray(legacy.verification?.commands) && legacy.verification.commands.length
           ? legacy.verification.commands
-          : [{ id: "typecheck", argv: ["npm", "run", "typecheck"] }],
+          : [{ id: "canonical", argv: ["pnpm", "verify:workspace"], timeoutMs: 1800000 }],
         requireCleanDiffAfter: legacy.verification?.requireCleanDiffAfter ?? true,
         invalidateOnHeadChange: legacy.verification?.invalidateOnHeadChange ?? true,
       },
@@ -135,7 +153,9 @@ export function legacyToShipConfig(legacy) {
       },
       ready: legacy.ready ?? { requires: ["review", "local-verification", "remote-ci"], stopAfterReady: true },
       merge: legacy.merge ?? { strategy: "squash", policy: "explicit-user-request-only", requireFreshGates: true },
-      cleanup: legacy.cleanup ?? { when: "next-task", requireUnpublishedGuard: true },
+      cleanup: legacy.cleanup && typeof legacy.cleanup === "object" && "when" in legacy.cleanup
+        ? legacy.cleanup
+        : { when: "next-task", requireUnpublishedGuard: true },
     },
   };
 }

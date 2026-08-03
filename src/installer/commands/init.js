@@ -9,8 +9,17 @@
 
 import { previewInstall, commitInstall, serializePlan } from "../executor.js";
 import { runDoctor } from "./doctor.js";
+import { validateCatalog } from "../catalog.js";
 
 export async function runInit(options) {
+  try {
+    validateCatalog();
+  } catch (e) {
+    if (e?.catalogValidation) {
+      return emitFailure(4, `catalog validation failed: ${e.message}`, options.json, "init");
+    }
+    throw e;
+  }
   const preview = await previewInstall({
     rootPath: options.rootPath ?? null,
     replaceManaged: false,
@@ -18,6 +27,12 @@ export async function runInit(options) {
     forceRootConfig: Boolean(options.forceRootConfig),
   });
   if (!preview.ok) {
+    if (preview.error?.kind === "unsupported-lock-schema") {
+      return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json, "init");
+    }
+    if (preview.error?.kind === "lock-invalid") {
+      return emitFailure(3, `lock invalid: ${(preview.error.issues ?? []).join("; ")}`, options.json, "init");
+    }
     return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json, "init");
   }
   const committed = await commitInstall(preview, { json: options.json, command: "init" });
