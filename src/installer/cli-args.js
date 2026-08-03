@@ -5,6 +5,8 @@
  * stable `--json` / `--root` / `--config` flags.
  */
 
+import { PROFILES, isValidProfile } from "../profile.js";
+
 const USAGE = `opencode-ship <command> [options]
 
 Commands:
@@ -18,6 +20,7 @@ Commands:
 
 Options:
   --root <path>          Project root (defaults to cwd).
+  --profile <name>       Override active profile: ${PROFILES.join(", ")}.
   --force-config         Rewrite the user config from detection (init only).
   --force-root-config    Create opencode.json when absent (init only).
   --strict-doctor        Fail init when doctor reports unhealthy checks.
@@ -26,9 +29,10 @@ Options:
   --json                 Emit a JSON envelope instead of human output.
 `;
 
-function parseFlags(argv) {
+export function parseFlags(argv) {
   const options = {
     rootPath: null,
+    profile: null,
     json: false,
     replaceManaged: false,
     purgeConfig: false,
@@ -45,7 +49,16 @@ function parseFlags(argv) {
     else if (arg === "--force-root-config") options.forceRootConfig = true;
     else if (arg === "--strict-doctor") options.strictDoctor = true;
     else if (arg === "--root") options.rootPath = argv[++i];
-    else if (arg === "-h" || arg === "--help") return { help: true };
+    else if (arg === "--profile") {
+      const value = argv[++i];
+      if (value === undefined) {
+        return { error: "--profile requires a value" };
+      }
+      if (!isValidProfile(value)) {
+        return { error: `unknown profile '${value}' (expected one of: ${PROFILES.join(", ")})` };
+      }
+      options.profile = value;
+    } else if (arg === "-h" || arg === "--help") return { help: true };
     else if (arg === "-v" || arg === "--version") return { version: true };
     else return { error: `unknown flag ${arg}` };
   }
