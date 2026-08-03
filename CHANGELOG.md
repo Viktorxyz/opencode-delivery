@@ -35,7 +35,7 @@ All notable changes to `opencode-ship` are recorded here.
 - `src/installer/migration.js` returns a `proposedConfigSeed`; `planConfigSynthesis()` consumes it instead of branching on legacy state.
 - `tests/installer/catalog.test.mjs`, `tests/installer/lock-validation.test.mjs`, `tests/installer/root-config.test.mjs`, `tests/installer/migration-pure.test.mjs`, and `tests/release/release-metadata.test.mjs` exercise the new contracts.
 - `tests/package/packed-artifact.test.mjs` extracts the npm tarball into a clean directory and runs its bundled CLI to `init` a fresh Git repository, asserting the plugin path, the five managed files, the lock, and the pointer records.
-- `THIRD_PARTY_NOTICES.md` documents the Superpowers MIT-licensed skill content that v0.4 will vendor.
+- `THIRD_PARTY_NOTICES.md` records that v0.3 contains no third-party skill bytes and reserves the attribution surface for the engineering-profile release that introduces them.
 - `scripts/prepack.mjs` runs `validateCatalog()` and verifies every required packaged artifact before publishing.
 
 ### Fixed
@@ -46,22 +46,6 @@ All notable changes to `opencode-ship` are recorded here.
 - Lock entries with `sha256: null` no longer reach `writeLock`; the planner/executor no longer produce a lock whose integrity digest silently mismatches its declared hashes.
 - Stale `tsconfig.dts.json` no longer gets tracked; the build artifact is now confined to `.tmp/`, which is gitignored.
 - The plugin target is pluralized to `.opencode/plugins/opencode-ship.js` so OpenCode auto-loads it from the default project plugin directory; the previously-tracked singular directory is removed.
-
-### Added
-
-- `src/version.js` centralises `PACKAGE_VERSION` and `TEMPLATE_SET`.
-- `src/installer/package-root.js` resolves the package root independently of the source / bundle dichotomy.
-- `src/installer/catalog.js#validateCatalog()` is the new fail-closed validation surface.
-- `src/installer/lock.js#validateLock()` and `readValidatedLock()` distinguish "fresh install", "supported lock", "unsupported schema", "tampered lock", and "malformed lock".
-- `src/installer/migration.js` returns a `proposedConfigSeed`; `planConfigSynthesis()` consumes it instead of branching on legacy state.
-- A migration action is now reported as `candidate-seed-config`, so `diff` can show the planned config synthesis without writing anything.
-
-### Fixed
-
-- `unpack` of the npm tarball into an isolated consumer did not previously prove the installer could materialise a working install from the extracted CLI; the packed-artifact smoke test now runs `init --force-root-config` end-to-end.
-- `diff` against a v0.2.1 consumer briefly wrote `ship.config.json` to disk; `diff` is now strictly read-only even when the migration detector would have seeded one.
-- Lock entries with `sha256: null` no longer reach `writeLock`; the planner/executor no longer produce a lock whose integrity digest silently mismatches its declared hashes.
-- Stale `tsconfig.dts.json` no longer gets tracked; the build artifact is now confined to `.tmp/`, which is gitignored.
 
 ## 0.2.0 — npm-distributed installer release
 

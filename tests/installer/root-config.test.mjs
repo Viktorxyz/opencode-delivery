@@ -16,9 +16,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { previewInstall } from "../../src/installer/executor.js";
+import { previewUninstall } from "../../src/installer/executor.js";
 import { runInit } from "../../src/installer/commands/init.js";
 import { makeProject, cleanProject } from "../fixtures/installer-fixture.mjs";
 
@@ -61,7 +62,13 @@ test("uninstall: refuses to remove a modified managed file", async (t) => {
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
 
-  await previewInstall({ rootPath: repoRoot });
-  const preview = await previewInstall({ rootPath: repoRoot });
+  await initIntoProject(repoRoot);
+  const pluginPath = resolve(repoRoot, ".opencode/plugins/opencode-ship.js");
+  await appendFile(pluginPath, "\n// local modification\n");
+
+  const preview = await previewUninstall({ rootPath: repoRoot });
   assert.equal(preview.ok, true);
+  assert.equal(preview.conflicts.length, 1);
+  assert.equal(preview.conflicts[0].relPath, ".opencode/plugins/opencode-ship.js");
+  assert.match(preview.conflicts[0].reason, /locally modified/);
 });

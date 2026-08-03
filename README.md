@@ -119,7 +119,7 @@ npm run build
 npm run verify
 ```
 
-The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent. The temporary `tsconfig.dts.json` lives under `tsconfig.dts.json` in `.gitignore` and under `.tmp/` so a tracked config file is never accidentally committed.
+The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `dist/*.d.ts` are emitted by `tsc` from the in-package `src/plugin.ts`, `src/cli.ts`, and `src/core.ts` entry points. The `prepack` script fails closed if `esbuild` or `tsc` is missing or any required build artifact is absent. The temporary config lives at `.tmp/tsconfig.dts.json`, under the gitignored `.tmp/` directory, so a tracked config file is never accidentally committed.
 
 ## Status and licensing
 
@@ -131,7 +131,7 @@ The shipped artifact is built by esbuild (`scripts/build.mjs`); self-contained `
 
 **Is the package on npm?**
 
-Yes, `opencode-ship` is published to npm with a public scope. The release workflow at `.github/workflows/release.yml` validates the tag against `package.json`, packs a single tarball, publishes that tarball to npm (`--access public --provenance`), and uploads the same tarball as the GitHub Release asset. Consumers who cannot reach npm can run from the GitHub tarball URL shown in the release body.
+Yes, `opencode-ship` is published as a public npm package. The release workflow at `.github/workflows/release.yml` validates the tag against `package.json`, packs a single tarball, publishes that tarball to npm (`--access public --provenance`), and uploads the same tarball as the GitHub Release asset. Consumers who cannot reach npm can run from the GitHub tarball URL shown in the release body.
 
 **Where is the `@opencode-ai/plugin` dependency?**
 
@@ -139,7 +139,7 @@ The plugin is bundled (`scripts/build.mjs` does not externalize it). Consumers d
 
 **What does `init` actually write?**
 
-It writes (or refreshes) the seven managed files in `.opencode/`, the user-owned `ship.config.json`, and the integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so. The catalog validator runs first and exits `4` if a packaged source is missing, so the installer refuses to materialise a half-built state.
+It writes (or refreshes) five managed files in `.opencode/`, plus the user-owned `ship.config.json` and integrity-hashed `ship.lock.json`. It also merges eleven JSON-pointer values into the root `opencode.json` (or `.jsonc`) without overwriting unrelated keys. By default it does not create `opencode.json` — pass `--force-root-config` to do so. The catalog validator runs first and exits `4` if a packaged source is missing, so the installer refuses to materialise a half-built state.
 
 **Where does the lock live and how is it integrity-checked?**
 

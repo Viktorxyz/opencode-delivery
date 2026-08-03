@@ -57,11 +57,13 @@ test("release.yml: validates tag against package.json and publishes to npm", () 
   const yaml = readText(".github/workflows/release.yml");
   assert.match(yaml, /id-token:\s*write/);
   assert.match(yaml, /setup-node@v4/);
+  assert.match(yaml, /npm install --global npm@11\.5\.2/);
   assert.match(yaml, /npm publish/);
   assert.match(yaml, /--provenance/);
+  assert.match(yaml, /opencode-ship-\$\{\{ github\.ref_name \}\}\.tgz/);
 });
 
-test("source tree: only src/version.js hard-codes the current version", async () => {
+test("source tree: no source file hard-codes the current version", async () => {
   const { readdir, readFile } = await import("node:fs/promises");
   const srcDir = `${root}/src`;
   const entries = await readdir(srcDir, { recursive: true });
@@ -70,7 +72,6 @@ test("source tree: only src/version.js hard-codes the current version", async ()
   const versionRegex = new RegExp(pkg.version.replace(/\./g, "\\."));
   for (const rel of entries) {
     if (!/\.(js|mjs|ts)$/.test(rel)) continue;
-    if (rel === "version.js") continue;
     const text = await readFile(`${srcDir}/${rel}`, "utf8");
     if (versionRegex.test(text)) offenders.push(rel);
   }

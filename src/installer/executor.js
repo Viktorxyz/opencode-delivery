@@ -19,6 +19,7 @@ import { CATALOG, TEMPLATE_SET_ID } from "./catalog.js";
 import { PACKAGE_VERSION } from "../version.js";
 import {
   planFileInstall,
+  planMigrationCleanup,
   planConfigSynthesis,
   planRootConfigApply,
   planUninstall,
@@ -63,16 +64,22 @@ export async function previewInstall({ rootPath, replaceManaged, forceConfig, fo
     return { ok: false, error: { kind: "lock-invalid", issues: validatedLock.issues } };
   }
   const lock = validatedLock.lock;
-  const migrationReport = await migration({ repoRoot, lock, forceRepair: false });
+  const migrationReport = await migration({ repoRoot, lock, forceRepair: false, detection });
 
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
     migrationSeed: migrationReport?.proposedConfigSeed ?? null,
   });
   const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged) });
+  const migrationPlan = await planMigrationCleanup({
+    repoRoot,
+    lock,
+    migrationReport,
+    allowUnowned: Boolean(replaceManaged),
+  });
   const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig) });
 
-  const plan = [...(filePlan ?? []), configPlan, rootPlan];
+  const plan = [...(filePlan ?? []), ...migrationPlan, configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
   const summary = summarise(plan);
   return { ok: true, repoRoot, detection, lock, plan, conflicts, summary, migrationReport };

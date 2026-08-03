@@ -14,6 +14,7 @@ import { statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { CATALOG, validateCatalog, PACKAGE_VERSION } from "../../src/installer/catalog.js";
+import { TEMPLATE_SET } from "../../src/version.js";
 
 test("CATALOG: every entry declares id, kind, path, source, and mode", () => {
   for (const entry of CATALOG) {
@@ -21,6 +22,7 @@ test("CATALOG: every entry declares id, kind, path, source, and mode", () => {
     assert.ok(entry.id.length > 0, `empty id: ${JSON.stringify(entry)}`);
     assert.ok(["plugin", "agent", "skill", "support"].includes(entry.kind));
     assert.ok(entry.path.startsWith(".opencode/"), `path not rooted under .opencode/: ${entry.path}`);
+    assert.equal(entry.path.startsWith(".opencode/plugin/"), false, `legacy singular plugin path: ${entry.path}`);
     assert.equal(typeof entry.source, "string");
     assert.ok(entry.source.length > 0);
     assert.equal(entry.mode, 0o644);
@@ -56,6 +58,7 @@ test("CATALOG: version constants agree with package.json", async () => {
   const raw = await readFile(resolve("package.json"), "utf8");
   const pkg = JSON.parse(raw);
   assert.equal(PACKAGE_VERSION, pkg.version);
+  assert.equal(TEMPLATE_SET, `v${pkg.version}`);
 });
 
 test("validateCatalog: passes for the real catalog", () => {

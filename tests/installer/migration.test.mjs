@@ -15,10 +15,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, rename } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
 import { makeProject, cleanProject } from "../fixtures/installer-fixture.mjs";
+import { writeLock } from "../../src/installer/lock.js";
 
 const CLI = resolve("dist/cli.js");
 
@@ -59,4 +60,31 @@ test("migration: detects the legacy adapter and lock", async (t) => {
   assert.ok(existsSync(join(repoRoot, ".opencode/ship.config.json")));
   assert.ok(existsSync(join(repoRoot, ".opencode/ship.lock.json")));
   void readFile;
+});
+
+test("migration: update removes the lock-owned singular plugin path", async (t) => {
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+
+  const initial = cli(repoRoot, ["init"]);
+  assert.equal(initial.status, 0, initial.stderr);
+
+  const pluralPath = join(repoRoot, ".opencode/plugins/opencode-ship.js");
+  const singularPath = join(repoRoot, ".opencode/plugin/opencode-ship.js");
+  await mkdir(join(repoRoot, ".opencode/plugin"), { recursive: true });
+  await rename(pluralPath, singularPath);
+
+  const lockPath = join(repoRoot, ".opencode/ship.lock.json");
+  const lock = JSON.parse(await readFile(lockPath, "utf8"));
+  const plugin = lock.files.find((entry) => entry.kind === "plugin");
+  plugin.path = ".opencode/plugin/opencode-ship.js";
+  await writeLock(repoRoot, lock);
+
+  const updated = cli(repoRoot, ["update"]);
+  assert.equal(updated.status, 0, updated.stderr);
+  assert.equal(existsSync(singularPath), false);
+  assert.equal(existsSync(pluralPath), true);
+
+  const updatedLock = JSON.parse(await readFile(lockPath, "utf8"));
+  assert.equal(updatedLock.files.some((entry) => entry.path === ".opencode/plugin/opencode-ship.js"), false);
 });

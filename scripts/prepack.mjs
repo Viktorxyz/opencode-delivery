@@ -2,7 +2,7 @@
 /* npm `prepack` hook: build first, validate catalog, fail closed if any
  * required artifact is missing. */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -38,11 +38,6 @@ if (catalogCheck.status !== 0) {
   fail(`catalog validation failed with exit ${catalogCheck.status ?? "?"}`);
 }
 
-const pkgRaw = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
-if (pkgRaw.version !== peekVersionFromSource()) {
-  fail("src/version.js fallback does not match package.json");
-}
-
 for (const path of [
   "dist/plugin.js",
   "dist/cli.js",
@@ -65,10 +60,4 @@ for (const path of [
   if (!existsSync(resolve(root, path))) {
     fail(`expected packaged artifact missing: ${path}`);
   }
-}
-
-function peekVersionFromSource() {
-  const raw = readFileSync(resolve(root, "src/version.js"), "utf8");
-  const match = raw.match(/FALLBACK_VERSION\s*=\s*"([^"]+)"/);
-  return match ? match[1] : null;
 }

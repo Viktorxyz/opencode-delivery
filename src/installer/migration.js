@@ -25,7 +25,6 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { readLock } from "./lock.js";
 import { loadConfig, renderDefaultConfig } from "./config.js";
-import { flattenShipConfig } from "./ship-adapter.js";
 
 function legacyAdapterPath(repoRoot) {
   return resolve(repoRoot, ".opencode", "delivery.json");
@@ -88,7 +87,7 @@ function isShimPluginEntry(opencodeDoc) {
  * consumer who never installed a previous release is never asked to
  * remove anything.
  */
-export async function migration({ repoRoot, lock, forceRepair }) {
+export async function migration({ repoRoot, lock, forceRepair, detection = null }) {
   const shapes = await detectLegacyShapes(repoRoot);
   const legacy = await readLegacyAdapter(repoRoot);
   const config = await loadConfig(repoRoot);
@@ -96,7 +95,7 @@ export async function migration({ repoRoot, lock, forceRepair }) {
   let proposedConfigSeed = null;
 
   if (legacy && !config?.ok) {
-    proposedConfigSeed = legacyToShipConfig(legacy.value);
+    proposedConfigSeed = legacyToShipConfig(legacy.value, detection);
     actions.push({ kind: "candidate-seed-config", from: legacy.path });
   }
 
@@ -116,18 +115,18 @@ export async function migration({ repoRoot, lock, forceRepair }) {
   return { shapes, actions, legacyPresent: Boolean(legacy), proposedConfigSeed };
 }
 
-export function legacyToShipConfig(legacy) {
-  if (!legacy || typeof legacy !== "object") return renderDefaultConfig({});
+export function legacyToShipConfig(legacy, detection = null) {
+  if (!legacy || typeof legacy !== "object") return renderDefaultConfig(detection ?? {});
   const repoSlug = typeof legacy.repository?.repoSlug === "string"
     ? legacy.repository.repoSlug
-    : "owner/repo";
+    : detection?.repository ?? "owner/repo";
   return {
     schemaVersion: 1,
     project: {
-      remote: legacy.repository?.remote ?? "origin",
+      remote: legacy.repository?.remote ?? detection?.remote ?? "origin",
       repository: repoSlug,
-      defaultBranch: legacy.repository?.defaultBranch?.name ?? "main",
-      packageManager: "pnpm",
+      defaultBranch: legacy.repository?.defaultBranch?.name ?? detection?.defaultBranch ?? "main",
+      packageManager: detection?.packageManager ?? "pnpm",
       detectOverrides: false,
     },
     delivery: {

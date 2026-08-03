@@ -69,10 +69,6 @@ export const CATALOG = [
 
 const ALLOWED_KINDS = new Set(["plugin", "agent", "skill", "support"]);
 
-export function pluginPath() {
-  return CATALOG.find((entry) => entry.kind === "plugin")?.path ?? ".opencode/plugins/opencode-ship.js";
-}
-
 /**
  * Fail-closed catalog validation. Throws when any entry is malformed
  * or when any source file does not exist on disk. The caller decides

@@ -35,6 +35,9 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      - name: install npm with trusted publishing support
+        run: npm install --global npm@11.5.2
+
       - name: install dependencies
         run: npm ci --no-audit --no-fund
 
@@ -109,7 +112,7 @@ jobs:
             ## opencode-ship ${{ steps.pack.outputs.package-version }}
 
             npm-distributed OpenCode installer and delivery plugin with the
-            optional `practices` profile foundation. See `README.md`
+            profile-ready installer foundation. See `README.md`
             and `CHANGELOG.md` for the full release notes.
 
             ### Install (npm)
@@ -121,7 +124,7 @@ jobs:
             ### Install (GitHub release tarball)
 
             ```sh
-            pnpm dlx --package=https://github.com/Viktorxyz/opencode-ship/releases/download/${{ github.ref_name }}/opencode-ship-${{ steps.pack.outputs.package-version }}.tgz opencode-ship init
+            pnpm dlx --package=https://github.com/Viktorxyz/opencode-ship/releases/download/${{ github.ref_name }}/opencode-ship-${{ github.ref_name }}.tgz opencode-ship init
             ```
           files: |
             dist-pkg/opencode-ship-${{ github.ref_name }}.tgz

@@ -201,13 +201,14 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
   const repoRoot = detection.repoRoot;
   const sourceHashes = buildSourceHashIndex();
   const validatedLock = await readValidatedLock(repoRoot);
+  const packageIntegrity = checkPackageIntegrity();
 
   const checks = [
     checkNode(),
     checkGit(),
     checkGh(),
     checkGhAuth(),
-    checkPackageIntegrity(),
+    packageIntegrity,
     checkCatalogInstall(repoRoot, sourceHashes),
     await checkLock(repoRoot),
     await checkConfig(repoRoot),
@@ -223,8 +224,8 @@ export async function runDoctor({ rootPath, json, writeOutput = true }) {
 
   let exitCode = 1;
   if (issues.length === 0) exitCode = 0;
+  if (!packageIntegrity.ok) exitCode = 4;
   if (validatedLock.kind === "schema") exitCode = 5;
-  if (issues.some((i) => i.startsWith("package integrity"))) exitCode = 4;
 
   if (writeOutput) writeEnvelope({ command: "doctor", plan, summary, diagnostics: issues, json, exitCode });
   process.exitCode = exitCode;

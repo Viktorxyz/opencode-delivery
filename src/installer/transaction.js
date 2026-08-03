@@ -5,12 +5,12 @@
  * file operation the executor:
  *
  *   1. acquires an exclusive lock file under the git common dir;
- *   2. snapshots the original file into a sibling backup file;
+ *   2. records the intended backup/staged paths in a durable journal;
  *   3. writes the new bytes to a sibling temporary file and fsyncs;
- *   4. records both backup and staged paths in the journal;
- *   5. renames the original to a backup, then promotes the staged
+ *   4. renames the original to a backup, then promotes the staged
  *      file into place, then fsyncs the parent directory;
- *   6. promotes the new lock last as the commit marker.
+ *   5. promotes the new lock last as the commit marker, then marks
+ *      the journal committed for idempotent artifact cleanup.
  *
  * On commit success the journal and every backup/staged file are
  * removed. On a rollback (caught exception), the executor walks the
@@ -32,6 +32,8 @@ import {
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { computeIntegrity } from "./lock.js";
+import { bytesHashString } from "./hash.js";
 
 function gitDir(repoRoot) {
   const r = spawnSync("git", ["-C", repoRoot, "rev-parse", "--path-format=absolute", "--git-dir"], {
@@ -68,16 +70,47 @@ async function mkdirp(path) {
 
 async function acquireLock(repoRoot, txnId) {
   const dir = lockDir(repoRoot);
+  const path = transactionLockPath(repoRoot);
   await mkdirp(dir);
-  await writeFile(
-    transactionLockPath(repoRoot),
-    JSON.stringify({ pid: process.pid, txnId, startedAt: new Date().toISOString() }),
-    { flag: "wx" },
-  );
+  let created = false;
+  try {
+    const handle = await open(path, "wx", 0o600);
+    created = true;
+    try {
+      await handle.writeFile(JSON.stringify({
+        pid: process.pid,
+        txnId,
+        startedAt: new Date().toISOString(),
+      }));
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fsyncDir(dir);
+  } catch (error) {
+    if (created) {
+      await unlink(path).catch(() => null);
+      await fsyncDir(dir);
+    }
+    throw error;
+  }
 }
 
 async function releaseLock(repoRoot) {
   try { await unlink(transactionLockPath(repoRoot)); } catch { /* ignore */ }
+}
+
+async function liveLockOwner(repoRoot) {
+  const path = transactionLockPath(repoRoot);
+  if (!existsSync(path)) return false;
+  try {
+    const lock = JSON.parse(await readFile(path, "utf8"));
+    if (!Number.isInteger(lock?.pid) || lock.pid <= 0) return false;
+    process.kill(lock.pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
 }
 
 async function fsyncDir(path) {
@@ -108,14 +141,28 @@ function asMode(mode) {
 }
 
 async function writeJournal(repoRoot, txnId, journal) {
-  const json = { ...journal, ledger: journal.entries.map((entry) => ({
+  const { entries, ...header } = journal;
+  const json = { ...header, ledger: entries.map((entry) => ({
     op: entry.op,
     target: entry.target,
     backup: entry.backup ?? null,
     staged: entry.staged ?? null,
+    hadOriginal: entry.hadOriginal ?? null,
+    commitMarker: entry.commitMarker ?? false,
+    installedSha256: entry.installedSha256 ?? null,
     mode: entry.mode ?? null,
   })) };
-  await writeFile(journalPath(repoRoot, txnId), JSON.stringify(json, null, 2), "utf8");
+  const target = journalPath(repoRoot, txnId);
+  const staged = `${target}.tmp`;
+  const handle = await open(staged, "w", 0o600);
+  try {
+    await handle.writeFile(JSON.stringify(json, null, 2), "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(staged, target);
+  await fsyncDir(dirname(target));
 }
 
 async function clearJournal(repoRoot, txnId) {
@@ -133,55 +180,103 @@ async function readJournal(repoRoot, name) {
   }
 }
 
+async function isCommitted(journal) {
+  if (journal.committed) return true;
+  const marker = journal.ledger?.find((entry) => entry.commitMarker);
+  if (!marker?.target || !marker.installedSha256 || !existsSync(marker.target)) return false;
+  try {
+    return bytesHashString(await readFile(marker.target, "utf8")) === marker.installedSha256;
+  } catch {
+    return false;
+  }
+}
+
+async function restoreEntry(entry) {
+  if (entry.op === "write") {
+    if (entry.backup && existsSync(entry.backup)) {
+      await rename(entry.backup, entry.target);
+    } else if (entry.hadOriginal === false && existsSync(entry.target)) {
+      await unlink(entry.target);
+    }
+    if (entry.staged && existsSync(entry.staged)) await unlink(entry.staged);
+  } else if (entry.op === "delete" && entry.backup && existsSync(entry.backup)) {
+    await rename(entry.backup, entry.target);
+  }
+  await fsyncDir(dirname(entry.target));
+}
+
+async function recoverJournal(repoRoot, dir, name) {
+  const journal = await readJournal(repoRoot, name);
+  if (!journal) {
+    await unlink(resolve(dir, name)).catch(() => null);
+    return true;
+  }
+
+  const committed = await isCommitted(journal);
+  const entries = committed ? (journal.ledger ?? []) : [...(journal.ledger ?? [])].reverse();
+  let complete = true;
+  for (const entry of entries) {
+    try {
+      if (committed) await commitEntry(entry);
+      else await restoreEntry(entry);
+    } catch {
+      complete = false;
+    }
+  }
+  if (complete) await unlink(resolve(dir, name)).catch(() => null);
+  return complete;
+}
+
 async function recover(repoRoot) {
   const dir = lockDir(repoRoot);
   if (!existsSync(dir)) return { recovered: false, recoveredCount: 0 };
+  if (await liveLockOwner(repoRoot)) {
+    return { recovered: false, recoveredCount: 0, blocked: true };
+  }
   const { readdir } = await import("node:fs/promises");
   const names = await readdir(dir).catch(() => []);
   const journals = names.filter((n) => n.startsWith(".txn-") && n.endsWith(".journal"));
-  if (!journals.length) return { recovered: false, recoveredCount: 0 };
+  if (!journals.length) {
+    await releaseLock(repoRoot);
+    return { recovered: false, recoveredCount: 0 };
+  }
   let totalRecovered = 0;
+  let recoveryFailed = false;
   for (const name of journals) {
-    const journal = await readJournal(repoRoot, name);
-    if (!journal) {
-      await unlink(resolve(dir, name)).catch(() => null);
-      continue;
-    }
-    for (const entry of [...(journal.ledger ?? [])].reverse()) {
-      try {
-        if (entry.op === "write") {
-          if (entry.backup && existsSync(entry.backup)) {
-            await rename(entry.backup, entry.target);
-          } else if (entry.staged && existsSync(entry.staged)) {
-            await unlink(entry.staged);
-          }
-        } else if (entry.op === "delete") {
-          if (entry.backup && existsSync(entry.backup)) {
-            await rename(entry.backup, entry.target);
-          }
-        }
-      } catch { /* ignore */ }
-    }
-    await unlink(resolve(dir, name)).catch(() => null);
-    totalRecovered += 1;
+    if (await recoverJournal(repoRoot, dir, name)) totalRecovered += 1;
+    else recoveryFailed = true;
   }
   await releaseLock(repoRoot);
-  return { recovered: totalRecovered > 0, recoveredCount: totalRecovered };
+  return {
+    recovered: totalRecovered > 0,
+    recoveredCount: totalRecovered,
+    blocked: recoveryFailed,
+    reason: recoveryFailed ? "recovery-failed" : null,
+  };
 }
 
 async function commitEntry(entry) {
-  if (entry.op === "write") {
-    if (entry.backup && existsSync(entry.backup)) {
-      await unlink(entry.backup);
-    }
+  let changed = false;
+  if (entry.backup && existsSync(entry.backup)) {
+    await unlink(entry.backup);
+    changed = true;
   }
   if (entry.staged && existsSync(entry.staged)) {
     await unlink(entry.staged);
+    changed = true;
   }
+  if (changed) await fsyncDir(dirname(entry.target));
 }
 
 export async function executePlan({ repoRoot, plan, newLockBuilder }) {
   const recovered = await recover(repoRoot);
+  if (recovered.blocked) {
+    const kind = recovered.reason ?? "lock-held";
+    const message = kind === "lock-held"
+      ? "another opencode-ship transaction is active"
+      : "a previous opencode-ship transaction could not be recovered";
+    return { ok: false, error: { kind, message } };
+  }
   const txnId = `txn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   try {
     await acquireLock(repoRoot, txnId);
@@ -190,9 +285,9 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
   }
 
   const journal = { repoRoot, txnId, startedAt: new Date().toISOString(), entries: [] };
-  await writeJournal(repoRoot, txnId, journal);
 
   try {
+    await writeJournal(repoRoot, txnId, journal);
     for (const op of plan) {
       if (op.op !== "file") continue;
       if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge") continue;
@@ -203,44 +298,77 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
 
       if (op.kind === "delete") {
         if (!existsSync(op.target)) continue;
-        await rename(op.target, backup);
         journal.entries.push({
-          op: "delete", target: op.target, backup, staged: null, mode: asMode(op.mode),
+          op: "delete", target: op.target, backup, staged: null, hadOriginal: true, mode: asMode(op.mode),
         });
+        await writeJournal(repoRoot, txnId, journal);
+        await rename(op.target, backup);
       } else {
         await mkdirp(dirname(op.target));
-        if (existsSync(op.target)) {
-          await rename(op.target, backup);
-        }
+        const hadOriginal = existsSync(op.target);
+        journal.entries.push({
+          op: "write",
+          target: op.target,
+          backup: hadOriginal ? backup : null,
+          staged,
+          hadOriginal,
+          mode: asMode(op.mode),
+        });
+        await writeJournal(repoRoot, txnId, journal);
         await writeFile(staged, op.bytes ?? Buffer.alloc(0), { mode: asMode(op.mode) });
         const h = await open(staged, "r+");
         await h.sync();
         await h.close();
+        if (hadOriginal) await rename(op.target, backup);
         await rename(staged, op.target);
-        journal.entries.push({
-          op: "write", target: op.target, backup: existsSync(backup) ? backup : null, staged: null, mode: asMode(op.mode),
-        });
       }
       await fsyncDir(dirname(op.target));
-      await writeJournal(repoRoot, txnId, journal);
     }
 
     if (newLockBuilder) {
       const lockValue = await newLockBuilder();
-      const { writeLock: writer } = await import("./lock.js");
       const lockPathTarget = `${repoRoot}/.opencode/ship.lock.json`;
+      await mkdirp(dirname(lockPathTarget));
+      const token = randomToken();
+      const backup = backupPath(lockPathTarget, token);
+      const staged = stagedPath(lockPathTarget, token);
+      const hadOriginal = existsSync(lockPathTarget);
+      const finalLock = { ...lockValue, integrity: computeIntegrity(lockValue) };
+      const lockBytes = JSON.stringify(finalLock, null, 2) + "\n";
       journal.entries.push({
-        op: "write", target: lockPathTarget, backup: null, staged: null, mode: 0o644,
+        op: "write",
+        target: lockPathTarget,
+        backup: hadOriginal ? backup : null,
+        staged,
+        hadOriginal,
+        commitMarker: true,
+        installedSha256: bytesHashString(lockBytes),
+        mode: 0o644,
       });
-      await writer(repoRoot, lockValue);
       await writeJournal(repoRoot, txnId, journal);
+      await writeFile(staged, lockBytes, { mode: 0o644 });
+      const handle = await open(staged, "r+");
+      await handle.sync();
+      await handle.close();
+      if (hadOriginal) await rename(lockPathTarget, backup);
+      await rename(staged, lockPathTarget);
+      await fsyncDir(dirname(lockPathTarget));
     }
 
+    journal.committed = true;
+    await writeJournal(repoRoot, txnId, journal);
+    let cleanupComplete = true;
     for (const entry of journal.entries) {
-      await commitEntry(entry);
+      try { await commitEntry(entry); } catch { cleanupComplete = false; }
     }
-    await clearJournal(repoRoot, txnId);
-    return { ok: true, txnId, recovered: recovered.recovered ?? false, recoveredCount: recovered.recoveredCount ?? 0 };
+    if (cleanupComplete) await clearJournal(repoRoot, txnId);
+    return {
+      ok: true,
+      txnId,
+      recovered: recovered.recovered ?? false,
+      recoveredCount: recovered.recoveredCount ?? 0,
+      cleanupPending: !cleanupComplete,
+    };
   } catch (e) {
     await rollback(repoRoot, journal);
     return { ok: false, error: { kind: "transaction-failed", message: e?.message ?? String(e) } };
@@ -250,18 +378,10 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
 }
 
 async function rollback(repoRoot, journal) {
-  for (const entry of [...(journal.ledger ?? [])].reverse()) {
-    if (entry.op === "delete") {
-      if (entry.backup && existsSync(entry.backup)) {
-        try { await rename(entry.backup, entry.target); } catch { /* ignore */ }
-      }
-    } else if (entry.op === "write") {
-      if (entry.backup && existsSync(entry.backup)) {
-        try { await rename(entry.backup, entry.target); } catch { /* ignore */ }
-      } else if (entry.target && existsSync(entry.target)) {
-        try { await unlink(entry.target); } catch { /* ignore */ }
-      }
-    }
+  const entries = journal.entries ?? journal.ledger ?? [];
+  let complete = true;
+  for (const entry of [...entries].reverse()) {
+    try { await restoreEntry(entry); } catch { complete = false; }
   }
-  if (journal.txnId) await clearJournal(repoRoot, journal.txnId);
+  if (complete && journal.txnId) await clearJournal(repoRoot, journal.txnId);
 }

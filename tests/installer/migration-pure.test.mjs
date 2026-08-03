@@ -15,7 +15,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
 
@@ -72,5 +72,8 @@ test("init: legacy adapter present materialises ship.config.json from the legacy
   await seedLegacyAdapter(repoRoot);
   const r = cli(repoRoot, ["init"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(existsSync(join(repoRoot, ".opencode/ship.config.json")));
+  const configPath = join(repoRoot, ".opencode/ship.config.json");
+  assert.ok(existsSync(configPath));
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  assert.equal(config.project.repository, "Viktorxyz/fixture");
 });

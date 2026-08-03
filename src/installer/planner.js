@@ -107,6 +107,37 @@ export async function planFileInstall({ repoRoot, lock, allowUnowned = false }) 
   return plan;
 }
 
+export async function planMigrationCleanup({ repoRoot, lock, migrationReport, allowUnowned = false }) {
+  const action = migrationReport?.actions?.find((entry) => entry.kind === "candidate-remove-legacy-plugin-path");
+  if (!action) return [];
+
+  const relPath = ".opencode/plugin/opencode-ship.js";
+  const target = `${repoRoot}/${relPath}`;
+  const current = await readBytes(target);
+  if (!current) return [];
+
+  const locked = lookupLockedFile(lock, relPath);
+  if (locked?.sha256 === current.hash || allowUnowned) {
+    return [{
+      kind: "delete",
+      op: "file",
+      target,
+      relPath,
+      reason: "remove the lock-owned v0.2 singular plugin path",
+    }];
+  }
+
+  return [{
+    kind: "conflict",
+    op: "file",
+    target,
+    relPath,
+    currentSha: current.hash,
+    previousSha: locked?.sha256 ?? null,
+    reason: "legacy singular plugin is unowned or locally modified",
+  }];
+}
+
 export async function planUninstall({ repoRoot, lock }) {
   if (!lock) return [];
   const plan = [];

@@ -17,8 +17,6 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const FALLBACK_VERSION = "0.3.0";
-
 function readPackageVersion() {
   const here = dirname(fileURLToPath(import.meta.url));
   let dir = here;
@@ -36,7 +34,7 @@ function readPackageVersion() {
     if (parent === dir) break;
     dir = parent;
   }
-  return FALLBACK_VERSION;
+  throw new Error("unable to resolve opencode-ship package version");
 }
 
 export const PACKAGE_VERSION =
