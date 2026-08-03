@@ -90,8 +90,11 @@ jobs:
         run: |
           set -euo pipefail
           pkg_version="$(node -p "require('./package.json').version")"
-          status=$(npm view "opencode-ship@${pkg_version}" version --json 2>/dev/null || true)
-          if [[ -n "${status}" && "${status}" != "undefined" ]]; then
+          set +e
+          status=$(npm view "opencode-ship@${pkg_version}" version --json 2>/dev/null)
+          view_status=$?
+          set -e
+          if [[ ${view_status} -eq 0 && -n "${status}" && "${status}" != "undefined" ]]; then
             echo "::error::npm already has opencode-ship@${pkg_version}; refusing to republish"
             exit 2
           fi
