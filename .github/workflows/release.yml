@@ -113,6 +113,16 @@ jobs:
           npm_config_always_auth: "false"
         run: |
           env | grep -iE "ACTIONS_|NODE_|GITHUB_|npm_" | sort
+          echo "---"
+          echo "npm config list:"
+          npm config list
+          echo "---"
+          echo "test OIDC token fetch:"
+          curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=repo:badges/shields" | head -c 500 || true
+          echo
+          echo "---"
+          echo "npm whoami dry test:"
+          npm whoami --loglevel=verbose 2>&1 | tail -30 || true
 
       - name: publish to npm
         shell: bash
