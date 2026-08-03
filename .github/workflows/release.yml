@@ -101,6 +101,13 @@ jobs:
 
       - name: publish to npm
         shell: bash
+        env:
+          # actions/setup-node@v4 auto-injects NODE_AUTH_TOKEN from
+          # GITHUB_TOKEN for backward compatibility. That makes npm
+          # use the token instead of the OIDC trusted publisher, which
+          # fails with E404 because the GITHUB_TOKEN lacks publish
+          # scope. Force OIDC by clearing NODE_AUTH_TOKEN.
+          NODE_AUTH_TOKEN: ""
         run: |
           set -euo pipefail
           tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
