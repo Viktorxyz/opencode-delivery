@@ -47,6 +47,7 @@ export async function runInit(options) {
 
   const doctor = await runDoctor({
     rootPath: options.rootPath ?? null,
+    profile: options.profile ?? null,
     json: Boolean(options.json),
     writeOutput: false,
   });
