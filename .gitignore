@@ -7,3 +7,4 @@ coverage
 .worktrees/
 .opencode-ship/
 tsconfig.dts.json
+dist-pkg/
