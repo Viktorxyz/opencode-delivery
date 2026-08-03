@@ -2,6 +2,24 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.7.0 — M3 task loop contract
+
+`opencode-ship@0.7.0` ships the M3 task loop contract required by issue #22 (Task 7 in approved plan). The run store persists task state under `.git/opencode-ship/runs/<taskId>/`; the task brief extractor surfaces only the active task plus the plan header; the task reviewer emits separate Spec and Quality verdicts; the build-side commit ownership returns true only when the immutable review package is sealed and the plan hash still matches; the three-round breaker routes a failed third round back to the GPT planning role for a revision; the commit binding appends the immutable range to the run ledger; and the compaction context builder emits the short pointer set the chat hook injects when the context overflows. No plan body, no report body, and no commit diffs ever enter the chat.
+
+### Verification
+
+- `npm run verify` exits `0` with 302 tests across 34 suites on the v0.7 HEAD.
+
+### Added
+
+- **Run store.** `src/installer/run-store.js` exposes `ensureRunDir`, `writeProgress`, `readProgress`, `recordCommitRange` (append-only, dedup-rejected), `readCommitRanges`. Persists run state under `.git/opencode-ship/runs/<taskId>/` with the progress.md / ledger.json / reports/ layout.
+- **Task brief + compact context.** `src/installer/task-brief.js` exposes `buildTaskBrief` (extracts the active task from a multi-task plan plus the plan header) and `renderCompactContext` (emits the short pointer set the compaction hook injects into chat).
+- **Task reviewer.** `src/installer/task-reviewer.js` exposes `emitSpecVerdict`, `emitQualityVerdict` (separate verdicts with `specKind` / `qualityKind` discriminators), `shouldCommit` (only non-blocking on both sides), `assembleReviewPackage` (writes the immutable package to `reports/review-package.json`), `readReviewPackage`.
+- **Build-side commit ownership.** `src/installer/build-ownership.js` returns true only when both verdicts are non-blocking AND the sealed review package is on disk AND the plan hash still matches.
+- **Three-round breaker.** `src/installer/three-round-breaker.js` exposes `MAX_FIX_ROUNDS = 3` and `shouldRequestPlanRevision` (returns true only when `fixRound >= 3`).
+- **Compaction context.** `src/installer/compaction.js` exposes `buildCompactionContext` and `compactContextForRun` (reads the ledger entry count from disk and merges it with the caller-supplied pointer set).
+- **Commit binding.** `src/installer/commit-binding.js` re-exports the run-store `recordCommitRange` as `recordApprovedCommit` so Build can call one name per role.
+
 ## 0.6.0 — Durable plan artifact + Plan Mode integration
 
 `opencode-ship@0.6.0` ships the durable plan artifact and the Plan Mode permission integration required by issue #21. The runtime now supports the GPT-to-MiniMax handoff end-to-end: a planning sub-agent can write a hash-verified plan to `.git/opencode-ship/plans/<slug>/revision-NNNN.json`, mirror it to the parent issue as a marked comment, and run with a deny-first, narrow-allow permission block that prevents it from touching source/config/docs.
