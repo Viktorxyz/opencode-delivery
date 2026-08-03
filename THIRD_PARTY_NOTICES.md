@@ -1,10 +1,12 @@
 # Third-Party Notices
 
-`opencode-ship@0.3.0` does not bundle third-party skill content. This file is
-the attribution surface for the v0.4 `engineering` profile that vendors
-upstream material; that release must list the exact files, source commit,
-reuse mode, and license here.
+`opencode-ship@0.4.0` ships the profile-aware installer foundation
+(`core` and `engineering` profiles). The current package version does
+not bundle third-party skill content. The `engineering` profile is
+the attribution surface for vendored upstream material; future
+releases that vendor skills must list the exact files, source
+commit, reuse mode, and license here.
 
 ## Bundled skill content
 
-None in v0.3.0.
+None in v0.4.0.
