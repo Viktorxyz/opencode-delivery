@@ -19,6 +19,12 @@ jobs:
     name: opencode-ship ${{ github.ref_name }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Explicit job-level permissions so ACTIONS_ID_TOKEN_* env vars
+    # are injected into every step. Without this, npm 11.5.2 cannot
+    # fetch an OIDC token even though the workflow has id-token: write.
+    permissions:
+      contents: write
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
