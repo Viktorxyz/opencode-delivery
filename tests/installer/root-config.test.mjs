@@ -5,12 +5,10 @@
  *   - `init` records every installer-owned pointer, including
  *     equal-existing ones, so future `uninstall` can restore;
  *   - root-config writes go through the transaction layer so a
- *     failing write does not desync the lock.
- *
- * For v0.3.0 the installer implements pointer ownership recording;
- * the actual uninstall restoration planner lands in v0.4 alongside
- * the practices profile. These tests pin the minimum invariant:
- * equal-existing pointer values are recorded as adopted.
+ *     failing write does not desync the lock;
+ *   - the engineering profile injects the Plan Mode permission
+ *     block under `agent.plan.permission` so consumers can spin up
+ *     a Plan Mode sub-agent without hand-editing opencode.json.
  */
 
 import test from "node:test";
@@ -71,4 +69,92 @@ test("uninstall: refuses to remove a modified managed file", async (t) => {
   assert.equal(preview.conflicts.length, 1);
   assert.equal(preview.conflicts[0].relPath, ".opencode/plugins/opencode-ship.js");
   assert.match(preview.conflicts[0].reason, /locally modified/);
+});
+
+test("applyPlanModeOwnership: injects the Plan Mode block under agent.plan.permission", async () => {
+  const { applyPlanModeOwnership, planModeBlock } = await import("../../src/installer/root-config.js");
+  const doc = {};
+  const result = applyPlanModeOwnership(doc);
+  assert.deepEqual(result.doc.agent?.plan?.permission, planModeBlock());
+  // The block is the deny-first shape from plan-mode-permissions.js.
+  assert.equal(result.doc.agent.plan.permission.bash, "deny");
+  assert.equal(
+    result.doc.agent.plan.permission.edit[".git/opencode-ship/plans/**"],
+    "allow",
+  );
+});
+
+test("applyPlanModeOwnership: previous value is captured for uninstall restoration", async () => {
+  const { applyPlanModeOwnership } = await import("../../src/installer/root-config.js");
+  // Simulate a consumer who already configured a Plan Mode
+  // permission (different from what we install). The previous
+  // value must be returned so uninstall can restore it.
+  const existing = { bash: "ask", edit: { "**/*": "allow" } };
+  const doc = { agent: { plan: { permission: existing } } };
+  const result = applyPlanModeOwnership(doc);
+  assert.deepEqual(result.previous, existing);
+  assert.equal(result.doc.agent.plan.permission.bash, "deny");
+});
+
+test("applyPlanModeOwnership: id is stable for the run ledger", async () => {
+  const { applyPlanModeOwnership } = await import("../../src/installer/root-config.js");
+  const a = applyPlanModeOwnership({});
+  const b = applyPlanModeOwnership({});
+  assert.equal(a.id, b.id);
+  assert.equal(a.id, "/agent/plan/permission");
+});
+
+test("end-to-end: init --profile engineering writes the Plan Mode block into the consumer's opencode.json", async (t) => {
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  const { makeProject, cleanProject } = await import("../fixtures/installer-fixture.mjs");
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  // Init with engineering profile; force the root config so the
+  // Plan Mode block has somewhere to land.
+  const r = await runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "engineering",
+    forceRootConfig: true,
+  });
+  assert.equal(r.exitCode, 0, r.stderr || r.stdout);
+  // The consumer must have opencode.json after forceRootConfig.
+  const rootPath = resolve(repoRoot, "opencode.json");
+  assert.ok(existsSync(rootPath), "opencode.json should exist after forceRootConfig");
+  const doc = JSON.parse(readFileSync(rootPath, "utf8"));
+  assert.ok(doc.agent?.plan?.permission, "Plan Mode block must be injected under agent.plan.permission");
+  assert.equal(doc.agent.plan.permission.bash, "deny");
+  assert.equal(
+    doc.agent.plan.permission.edit[".git/opencode-ship/plans/**"],
+    "allow",
+  );
+});
+
+test("end-to-end: init --profile core does NOT inject the Plan Mode block", async (t) => {
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { makeProject, cleanProject } = await import("../fixtures/installer-fixture.mjs");
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const r = await runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "core",
+    forceRootConfig: true,
+  });
+  assert.equal(r.exitCode, 0, r.stderr || r.stdout);
+  // The lock must not record the Plan Mode block when the
+  // consumer is on the core profile.
+  const { readFileSync } = await import("node:fs");
+  const { resolve } = await import("node:path");
+  const lock = JSON.parse(readFileSync(resolve(repoRoot, ".opencode/ship.lock.json"), "utf8"));
+  const recorded = new Set(
+    (lock.manager?.rootDocuments ?? []).flatMap((d) => (d.pointers ?? []).map((p) => p.pointer)),
+  );
+  assert.equal(
+    recorded.has("/agent/plan/permission"),
+    false,
+    "core profile must not record the Plan Mode pointer",
+  );
 });

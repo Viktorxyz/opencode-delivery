@@ -193,7 +193,7 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
   };
 }
 
-export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
+export async function planRootConfigApply({ repoRoot, lock, forceRepair, planMode = null }) {
   const detected = findRootConfig(repoRoot);
   const target = detected.path ?? defaultRootConfigPath(repoRoot);
   const previous = lock?.manager?.rootDocuments?.find((d) => d.path === detected.relative);
@@ -203,11 +203,19 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     const seededRecords = (previous?.pointers && previous.pointers.length > 0)
       ? previous.pointers
       : POINTER_ENTRIES.map((entry) => ({
-        pointer: entry.pointer,
-        strategy: entry.strategy,
-        installedSha256: bytesHashString(stableStringify(entry.value)),
+          pointer: entry.pointer,
+          strategy: entry.strategy,
+          installedSha256: bytesHashString(stableStringify(entry.value)),
+          previous: { existed: false },
+        }));
+    if (planMode) {
+      seededRecords.push({
+        pointer: planMode.id,
+        strategy: "value",
+        installedSha256: bytesHashString(stableStringify(planMode.block)),
         previous: { existed: false },
-      }));
+      });
+    }
     return {
       kind: "noop", op: "root-config", target, relPath: detected.relative,
       reason: "no root opencode.json present",
@@ -216,8 +224,12 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
     };
   }
   if (fileMissing && forceRepair) {
-    const { synthesizeDefaultRootConfig, formatRootConfig } = await import("./root-config.js");
-    const doc = synthesizeDefaultRootConfig();
+    const { synthesizeDefaultRootConfig, formatRootConfig, applyPlanModeOwnership } = await import("./root-config.js");
+    let doc = synthesizeDefaultRootConfig();
+    if (planMode) {
+      const applied = applyPlanModeOwnership(doc, { block: planMode.block, pointer: planMode.id });
+      doc = applied.doc;
+    }
     const bytes = Buffer.from(formatRootConfig(doc), "utf8");
     const newSha = bytesHashString(stableStringify(doc));
     const installedPointers = POINTER_ENTRIES.map((entry) => ({
@@ -226,6 +238,14 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair }) {
       installedSha256: bytesHashString(stableStringify(entry.value)),
       previous: { existed: false },
     }));
+    if (planMode) {
+      installedPointers.push({
+        pointer: planMode.id,
+        strategy: "value",
+        installedSha256: bytesHashString(stableStringify(planMode.block)),
+        previous: { existed: false },
+      });
+    }
     return {
       kind: "create",
       op: "root-config",

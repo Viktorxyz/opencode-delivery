@@ -23,6 +23,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setPointer, getPointer, stableStringify } from "./json-pointer.js";
 import { bytesHashString } from "./hash.js";
+import { planModePermissions } from "./plan-mode-permissions.js";
 
 export const POINTER_ENTRIES = [
   {
@@ -189,6 +190,34 @@ export function applyOwnedPointers(rootDoc, { pointerEntries = POINTER_ENTRIES, 
     });
   }
   return result;
+}
+
+/**
+ * Single owned pointer for the Plan Mode sub-agent. The block is
+ * a structured object (deny-first + narrow allow) so the standard
+ * scalar-only POINTER_ENTRIES pipeline cannot carry it; the
+ * installer injects it directly when the active profile is
+ * `engineering`. The id is stable for the run ledger.
+ */
+export const PLAN_MODE_POINTER = "/agent/plan/permission";
+
+/**
+ * Apply the Plan Mode permission block to the consumer's
+ * `opencode.json`. Captures the previous value (if any) so
+ * uninstall can restore it. Returns `{ doc, previous, id }`.
+ */
+export function applyPlanModeOwnership(rootDoc, { pointer = PLAN_MODE_POINTER, block = planModePermissions().build } = {}) {
+  const previous = getPointer(rootDoc, pointer);
+  const doc = setPointer(rootDoc, pointer, block);
+  return { doc, previous: previous === undefined ? null : previous, id: pointer };
+}
+
+/**
+ * Re-export the Plan Mode block at the render layer so callers
+ * (CLI snapshots, JSON envelopes) can show the same shape.
+ */
+export function planModeBlock() {
+  return planModePermissions().build;
 }
 
 /*

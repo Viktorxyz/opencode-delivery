@@ -34,6 +34,7 @@ import { lockPath } from "./lock.js";
 import { executePlan } from "./transaction.js";
 import { migration } from "./migration.js";
 import { resolveProfile } from "../profile.js";
+import { planModePermissions } from "./plan-mode-permissions.js";
 
 async function readCurrentBytes(targetPath) {
   if (!existsSync(targetPath)) return null;
@@ -96,7 +97,14 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     migrationReport,
     allowUnowned: Boolean(replaceManaged),
   });
-  const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig) });
+  // The engineering profile injects the Plan Mode permission
+  // block under agent.plan.permission. Core consumers never see
+  // it; the active-profile gate is the same precedence chain as
+  // the file install.
+  const planMode = resolved.profile === "engineering"
+    ? { id: "/agent/plan/permission", block: planModePermissions().build }
+    : null;
+  const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig), planMode });
 
   const plan = [...(filePlan ?? []), ...migrationPlan, configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
