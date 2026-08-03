@@ -61,3 +61,30 @@ for (const path of [
     fail(`expected packaged artifact missing: ${path}`);
   }
 }
+
+// Verify the vendor manifest is well-formed. An empty manifest is
+// valid (the package ships no third-party content yet); a
+// non-empty manifest must reference a sourceRef for every entry
+// and the local file must hash to sourceSha256.
+const manifestPath = resolve(root, "vendor/sources.json");
+if (existsSync(manifestPath)) {
+  const manifestScript = `
+    import { loadManifest, verifyManifestIntegrity } from ${JSON.stringify(resolve(root, "src/installer/manifest.js"))};
+    (async () => {
+      const r = await loadManifest(${JSON.stringify(manifestPath)});
+      if (!r) { console.error('no manifest'); return; }
+      if (r.kind !== 'ok') { console.error('manifest: ' + r.kind + ': ' + r.issues.join('; ')); process.exit(3); }
+      const v = await verifyManifestIntegrity(r.manifest, ${JSON.stringify(root)});
+      if (!v.ok) {
+        if (v.missing.length) console.error('manifest: missing files: ' + v.missing.join(', '));
+        if (v.mismatches.length) console.error('manifest: hash mismatches: ' + v.mismatches.map((m) => m.target + ' (expected ' + m.expected + ', got ' + m.actual + ')').join('; '));
+        process.exit(4);
+      }
+      console.error('manifest: ok (' + r.manifest.sources.length + ' sources)');
+    })().catch((e) => { console.error('manifest: ' + (e?.message ?? e)); process.exit(5); });
+  `;
+  const manifestCheck = spawnSync("node", ["--input-type=module", "--no-warnings", "-e", manifestScript], { stdio: "inherit" });
+  if (manifestCheck.status !== 0) {
+    fail(`vendor manifest check failed with exit ${manifestCheck.status ?? "?"}`);
+  }
+}
