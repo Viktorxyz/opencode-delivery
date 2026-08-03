@@ -103,6 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
           npm publish "${tarball}" --access public --provenance --tag latest
 
