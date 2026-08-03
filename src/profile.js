@@ -13,9 +13,9 @@
  *                  explicitly asks for it.
  *
  * The profile is resolved per-invocation using precedence:
- *   1. explicit CLI flag (--profile <name>)
- *   2. ship.config.json `.profile` field
- *   3. existing lock `.manager.profile` field
+ *   1. explicit CLI flag (--profile <name>)        (caller-provided)
+ *   2. ship.config.json `.profile` field           (user-owned)
+ *   3. existing lock `.manager.profile` field      (machine record)
  *   4. default (core)
  *
  * An unknown profile always fails the invocation with exit code 2
@@ -34,4 +34,47 @@ export function normalizeProfile(name) {
   if (name === undefined || name === null) return DEFAULT_PROFILE;
   if (!isValidProfile(name)) return null;
   return name;
+}
+
+/**
+ * Resolve the active profile using the documented precedence.
+ *
+ * Inputs are read-only snapshots. The function does not validate
+ * the inputs themselves — callers (cli-args, config loader, lock
+ * loader) are responsible for that. An input that survives its
+ * own validator is trusted here.
+ *
+ * @param {object} sources
+ * @param {string|null|undefined} [sources.cli]      precedence 1
+ * @param {object|null|undefined} [sources.config]    precedence 2
+ * @param {object|null|undefined} [sources.lock]      precedence 3
+ * @returns {{ profile: string, source: "cli"|"config"|"lock"|"default" }}
+ */
+export function resolveProfile({ cli = null, config = null, lock = null } = {}) {
+  if (cli !== null && cli !== undefined) {
+    const v = normalizeProfile(cli);
+    if (v === null) {
+      throw new Error(`unknown CLI profile '${cli}' (expected one of: ${PROFILES.join(", ")})`);
+    }
+    return { profile: v, source: "cli" };
+  }
+  if (config && typeof config === "object" && config.profile !== undefined && config.profile !== null) {
+    const v = normalizeProfile(config.profile);
+    if (v === null) {
+      throw new Error(
+        `unknown ship.config.json profile '${config.profile}' (expected one of: ${PROFILES.join(", ")})`,
+      );
+    }
+    return { profile: v, source: "config" };
+  }
+  if (lock && typeof lock === "object" && lock.manager && lock.manager.profile !== undefined) {
+    const v = normalizeProfile(lock.manager.profile);
+    if (v === null) {
+      throw new Error(
+        `unknown lock manager.profile '${lock.manager.profile}' (expected one of: ${PROFILES.join(", ")})`,
+      );
+    }
+    return { profile: v, source: "lock" };
+  }
+  return { profile: DEFAULT_PROFILE, source: "default" };
 }

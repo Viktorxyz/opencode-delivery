@@ -6,16 +6,20 @@
   "required": ["contractVersion", "manager", "files", "integrity"],
   "additionalProperties": false,
   "properties": {
-    "contractVersion": { "const": 1 },
+    "contractVersion": { "enum": [1, 2] },
     "manager": {
       "type": "object",
       "required": ["schemaVersion", "name", "version", "appliedAt", "config"],
       "additionalProperties": false,
       "properties": {
-        "schemaVersion": { "const": 1 },
+        "schemaVersion": { "enum": [1, 2] },
         "name": { "type": "string", "pattern": "^opencode-ship$" },
         "version": { "type": "string", "minLength": 1 },
         "templateSet": { "type": "string", "minLength": 1 },
+        "profile": {
+          "enum": ["core", "engineering"],
+          "description": "Profile the lock was applied under. Required on locks written at schema 2; absent on legacy schema-1 locks (resolved to core by the profile precedence layer)."
+        },
         "appliedAt": { "type": "string", "format": "date-time" },
         "config": {
           "type": "object",
