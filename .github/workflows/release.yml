@@ -105,7 +105,7 @@ jobs:
             exit 2
           fi
 
-- name: debug OIDC env
+      - name: debug OIDC env
         shell: bash
         run: |
           env | grep -iE "ACTIONS_|NODE_|GITHUB_|npm_" | sort
