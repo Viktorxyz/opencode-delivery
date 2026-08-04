@@ -2,6 +2,18 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.9.0 — Complete engineering profile publish
+
+`opencode-ship@0.9.0` ships the transition matrix smoke required by issue #24 (Task 10 in approved plan). The smoke covers the core↔engineering transition shape — core omits engineering-only files, engineering installs them, and the lock's `manager.profile` field tracks the active profile across upgrades. The full E2E install (`pnpm dlx opencode-ship@latest`) continues to be exercised by the existing installer-cli tests; the new module focuses on the local-dev file set so the smoke runs in the default `npm run verify` pipeline.
+
+### Verification
+
+- `npm run verify` exits `0` with 320 tests across 34 suites on the v0.9 HEAD.
+
+### Added
+
+- **Transition matrix smoke.** `tests/package/transition-matrix.test.mjs` covers the core omits engineering, engineering adds engineering, and the lock `manager.profile` tracks the active profile across upgrades. The module is gated by `OPENCODE_SHIP_SMOKE_FULL=1` for the full E2E run; the lite version always runs and asserts the local-dev file set.
+
 ## 0.8.0 — Ready gate (parallel GPT Standards/Spec + verifier + CI on one HEAD)
 
 `opencode-ship@0.8.0` ships the Ready gate contract required by issue #23 (Task 9 in approved plan). The final review is the merge-base-to-HEAD review package; the GPT Standards and Spec reviewers inspect it in parallel; the verifier executes the canonical consumer verification command independently; and the gate refuses any record that is not on the current HEAD. Build cannot self-record both the final review and the verifier — the boundary is enforced by the same-runId check on the runId separate from Build's.
