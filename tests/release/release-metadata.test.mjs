@@ -74,21 +74,22 @@ test("docs: shipping docs reference the approved engineering-workflow plan", () 
   }
 });
 
-test("docs: README and CHANGELOG report 302 tests for the v0.7 verification baseline", () => {
+test("docs: README and CHANGELOG report 317 tests for the v0.8 verification baseline", () => {
   const changelog = readText("CHANGELOG.md");
   const readme = readText("README.md");
   for (const [name, text] of [["CHANGELOG.md", changelog], ["README.md", readme]]) {
-    assert.ok(text.includes("302"), `${name} must report the 302-test verification baseline`);
+    assert.ok(text.includes("317"), `${name} must report the 317-test verification baseline`);
     assert.ok(!/184 tests/.test(text), `${name} must not report the obsolete 184-test baseline`);
     // CHANGELOG.md legitimately records the historic 190 / 226 /
-    // 242 / 283 baselines under their respective sections; we only
-    // require that README.md does not reference those obsolete
-    // numbers.
+    // 242 / 283 / 302 baselines under their respective sections; we
+    // only require that README.md does not reference those
+    // obsolete numbers.
     if (name === "README.md") {
       assert.ok(!/190 tests/.test(text), `${name} must not report the obsolete 190-test baseline`);
       assert.ok(!/226 tests/.test(text), `${name} must not report the obsolete 226-test baseline`);
       assert.ok(!/242 tests/.test(text), `${name} must not report the obsolete 242-test baseline`);
       assert.ok(!/283 tests/.test(text), `${name} must not report the obsolete 283-test baseline`);
+      assert.ok(!/302 tests/.test(text), `${name} must not report the obsolete 302-test baseline`);
     }
   }
 });

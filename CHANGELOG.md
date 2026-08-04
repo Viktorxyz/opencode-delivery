@@ -2,6 +2,19 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.8.0 — Ready gate (parallel GPT Standards/Spec + verifier + CI on one HEAD)
+
+`opencode-ship@0.8.0` ships the Ready gate contract required by issue #23 (Task 9 in approved plan). The final review is the merge-base-to-HEAD review package; the GPT Standards and Spec reviewers inspect it in parallel; the verifier executes the canonical consumer verification command independently; and the gate refuses any record that is not on the current HEAD. Build cannot self-record both the final review and the verifier — the boundary is enforced by the same-runId check on the runId separate from Build's.
+
+### Verification
+
+- `npm run verify` exits `0` with 317 tests across 34 suites on the v0.8 HEAD.
+
+### Added
+
+- **Final review package + axes.** `src/installer/final-review.js` exposes `buildFinalReviewPackage` (merge-base-to-HEAD), `emitStandardsVerdict` and `emitSpecVerdict` (parallel, separate findings with `standardsKind` / `specKind` discriminators), `shouldRecordFinalReview` (pass only when both axes are non-blocking AND HEAD is current), `isReviewStale` (Ready gate staleness check), `READY_GATE_STATES` (the documented transition set: REVIEW_IN_PROGRESS, STANDARDS_PENDING, SPEC_PENDING, BOTH_PENDING, BOTH_PASSED, BLOCKING_FINDINGS, READY).
+- **Ready gate.** `src/installer/ready-gate.js` exposes `recordVerifierOutput` (binds the verifier output to the current HEAD; verifier runs in its own runId separate from Build's), `isVerifierStale` (same staleness rule as final review), `buildCannotSelfRecord` (refuses when the final review and the verifier share a runId — Build cannot self-verify), `isReady` (only true when Standards + Spec verdicts are non-blocking AND the verifier exited 0 AND CI is "pass" — all on the same HEAD), `recordReady` (stamps the Ready state on the consumer's HEAD).
+
 ## 0.7.0 — M3 task loop contract
 
 `opencode-ship@0.7.0` ships the M3 task loop contract required by issue #22 (Task 7 in approved plan). The run store persists task state under `.git/opencode-ship/runs/<taskId>/`; the task brief extractor surfaces only the active task plus the plan header; the task reviewer emits separate Spec and Quality verdicts; the build-side commit ownership returns true only when the immutable review package is sealed and the plan hash still matches; the three-round breaker routes a failed third round back to the GPT planning role for a revision; the commit binding appends the immutable range to the run ledger; and the compaction context builder emits the short pointer set the chat hook injects when the context overflows. No plan body, no report body, and no commit diffs ever enter the chat.
