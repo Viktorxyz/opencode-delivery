@@ -32,8 +32,12 @@ import {
   getPointer,
   stableStringify,
 } from "./json-pointer.js";
-import { POINTER_ENTRIES, applyOwnedPointers } from "./root-config.js";
-import { findRootConfig, readRootConfig, defaultRootConfigPath } from "./root-config.js";
+import { POINTER_ENTRIES, applyOwnedPointers, findRootConfig, readRootConfig, defaultRootConfigPath } from "./root-config.js";
+import {
+  planRootReconciliation,
+  desiredPointersForProfile,
+  PLAN_MODE_POINTER as RECON_PLAN_MODE_POINTER,
+} from "./root-reconciliation.js";
 
 async function readBytes(path) {
   if (!existsSync(path)) return null;
@@ -107,6 +111,37 @@ export async function planFileInstall({ repoRoot, lock, allowUnowned = false, ca
   return plan;
 }
 
+/**
+ * Plan the removal of files that were installed under the previous
+ * profile but are not part of the new (active) profile. Used for
+ * engineering -> core downgrades so engineering-only assets are
+ * cleaned up atomically. Files are removed only when the bytes on
+ * disk still match the lock; conflicting files become a
+ * plan-conflict and the installer refuses to clobber them.
+ */
+export async function planStaleFileRemoval({ repoRoot, lock, staleCatalog }) {
+  if (!Array.isArray(staleCatalog) || staleCatalog.length === 0) return [];
+  const out = [];
+  for (const entry of staleCatalog) {
+    const targetPath = `${repoRoot}/${entry.path}`;
+    const current = await readBytes(targetPath);
+    if (!current) continue;
+    const locked = lookupLockedFile(lock, entry.path);
+    if (current.hash !== (locked?.sha256 ?? null)) {
+      out.push({
+        kind: "conflict", op: "file", target: targetPath, relPath: entry.path,
+        reason: "stale profile asset is locally modified; refusing to remove",
+      });
+      continue;
+    }
+    out.push({
+      kind: "delete", op: "file", target: targetPath, relPath: entry.path,
+      reason: "remove stale profile asset on profile transition",
+    });
+  }
+  return out;
+}
+
 export async function planMigrationCleanup({ repoRoot, lock, migrationReport, allowUnowned = false }) {
   const action = migrationReport?.actions?.find((entry) => entry.kind === "candidate-remove-legacy-plugin-path");
   if (!action) return [];
@@ -141,6 +176,7 @@ export async function planMigrationCleanup({ repoRoot, lock, migrationReport, al
 export async function planUninstall({ repoRoot, lock }) {
   if (!lock) return [];
   const plan = [];
+  const activeProfile = lock?.manager?.profile ?? "core";
   for (const entry of lock.files ?? []) {
     const targetPath = `${repoRoot}/${entry.path}`;
     const current = await readBytes(targetPath);
@@ -154,6 +190,40 @@ export async function planUninstall({ repoRoot, lock }) {
     }
     plan.push({ kind: "delete", op: "file", target: targetPath, relPath: entry.path });
   }
+  // The root pointer reconciliation runs in the consumer's
+  // opencode.json. Uninstall must restore the preinstall state
+  // byte-by-byte, so the planner also includes the root-config
+  // step in the uninstall plan. The transaction layer only knows
+  // about `op: "file"`, so we surface the root-config update as a
+  // file write that the transaction will commit atomically with
+  // the rest of the plan.
+  const rootPlan = await planRootReconciliation({
+    repoRoot,
+    profile: activeProfile,
+    mode: "uninstall",
+    previousRecords: (lock?.manager?.rootDocuments ?? []).flatMap((d) => d.pointers ?? []),
+  });
+  if (rootPlan && rootPlan.kind && rootPlan.kind !== "noop" && rootPlan.bytes) {
+    plan.push({
+      op: "file",
+      kind: "update",
+      target: rootPlan.target,
+      relPath: rootPlan.relPath,
+      bytes: rootPlan.bytes,
+      mode: 0o644,
+      reason: rootPlan.reason,
+    });
+  }
+  // The lock file itself is removed by the uninstall command; we
+  // surface it as a transactional step so the executor commits it
+  // inside the journal.
+  plan.push({
+    kind: "delete",
+    op: "file",
+    target: `${repoRoot}/.opencode/ship.lock.json`,
+    relPath: ".opencode/ship.lock.json",
+    reason: "remove the install lock inside the transaction",
+  });
   return plan;
 }
 
@@ -194,176 +264,21 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
 }
 
 export async function planRootConfigApply({ repoRoot, lock, forceRepair, planMode = null }) {
-  const detected = findRootConfig(repoRoot);
-  const target = detected.path ?? defaultRootConfigPath(repoRoot);
-  const previous = lock?.manager?.rootDocuments?.find((d) => d.path === detected.relative);
-
-  const fileMissing = !existsSync(target);
-  if (fileMissing && !forceRepair) {
-    const seededRecords = (previous?.pointers && previous.pointers.length > 0)
-      ? previous.pointers
-      : POINTER_ENTRIES.map((entry) => ({
-          pointer: entry.pointer,
-          strategy: entry.strategy,
-          installedSha256: bytesHashString(stableStringify(entry.value)),
-          previous: { existed: false },
-        }));
-    if (planMode) {
-      seededRecords.push({
-        pointer: planMode.id,
-        strategy: "value",
-        installedSha256: bytesHashString(stableStringify(planMode.block)),
-        previous: { existed: false },
-      });
-    }
-    return {
-      kind: "noop", op: "root-config", target, relPath: detected.relative,
-      reason: "no root opencode.json present",
-      edits: [],
-      pointerRecords: seededRecords,
-    };
-  }
-  if (fileMissing && forceRepair) {
-    const { synthesizeDefaultRootConfig, formatRootConfig, applyPlanModeOwnership } = await import("./root-config.js");
-    let doc = synthesizeDefaultRootConfig();
-    if (planMode) {
-      const applied = applyPlanModeOwnership(doc, { block: planMode.block, pointer: planMode.id });
-      doc = applied.doc;
-    }
-    const bytes = Buffer.from(formatRootConfig(doc), "utf8");
-    const newSha = bytesHashString(stableStringify(doc));
-    const installedPointers = POINTER_ENTRIES.map((entry) => ({
-      pointer: entry.pointer,
-      strategy: entry.strategy,
-      installedSha256: bytesHashString(stableStringify(entry.value)),
-      previous: { existed: false },
-    }));
-    if (planMode) {
-      installedPointers.push({
-        pointer: planMode.id,
-        strategy: "value",
-        installedSha256: bytesHashString(stableStringify(planMode.block)),
-        previous: { existed: false },
-      });
-    }
-    return {
-      kind: "create",
-      op: "root-config",
-      target,
-      relPath: detected.relative,
-      bytes,
-      desiredSha: newSha,
-      currentSha: null,
-      edits: installedPointers.map((p) => ({ kind: "create", pointer: p.pointer, value: "(synthesized)" })),
-      pointerRecords: installedPointers,
-      format: "json",
-      document: doc,
-      reason: "creating root opencode.json with installer-owned Build permissions",
-    };
-  }
-  const docResult = readRootConfig(target);
-  if (!docResult.ok) {
-    return {
-      kind: "noop", op: "root-config", target, relPath: detected.relative,
-      reason: `root config ${docResult.error.kind}`,
-      edits: [],
-      pointerRecords: previous?.pointers ?? [],
-    };
-  }
-  const previousPointers = previous?.pointers ?? [];
-  const pointerEntries = planMode
-    ? [...POINTER_ENTRIES, { pointer: planMode.id, strategy: "value", value: planMode.block }]
-    : POINTER_ENTRIES;
-  const result = applyOwnedPointers(docResult.value, {
-    pointerEntries,
-    allowEqualValues: true,
+  const previous = (lock?.manager?.rootDocuments ?? []).flatMap((d) => d.pointers ?? []);
+  const previousProfile = lock?.manager?.profile ?? null;
+  // The desired profile is derived from the planMode hint passed by
+  // the executor (which is the resolved profile from the precedence
+  // chain). The previous lock's profile drives the transition
+  // decision: if the previous lock was under a different profile
+  // than the resolved one, this is a profile transition.
+  const desiredProfile = (planMode && planMode.scope === "engineering") ? "engineering" : "core";
+  const isTransition = previousProfile !== null && previousProfile !== desiredProfile;
+  const mode = previous.length === 0 ? "install" : (isTransition ? "profile-transition" : "install");
+  return planRootReconciliation({
+    repoRoot,
+    profile: desiredProfile,
+    mode,
+    previousRecords: previous,
+    forceRepair: Boolean(forceRepair),
   });
-  if (result.applied.length === 0 && result.skipped.every((s) => s.reason === "already equal")) {
-    const ownedPointers = previousPointers.length > 0
-      ? previousPointers
-      : pointerEntries.map((entry) => {
-          const existing = getPointer(docResult.value, entry.pointer);
-          return {
-            pointer: entry.pointer,
-            strategy: entry.strategy,
-            installedSha256: bytesHashString(stableStringify(existing ?? entry.value)),
-            previous: existing === undefined ? { existed: false } : { existed: true, value: existing },
-          };
-        });
-    return {
-      kind: "noop", op: "root-config", target, relPath: detected.relative,
-      reason: "no installer-owned entries missing",
-      edits: [],
-      pointerRecords: ownedPointers,
-      format: docResult.format,
-      document: docResult.value,
-      currentSha: docResult.sha256 ?? null,
-      desiredSha: docResult.sha256 ?? null,
-    };
-  }
-  /** @type {Array<{kind: string; pointer: any; reason?: any; existing?: any; desired?: any; value?: any}>} */
-  const edits = result.applied.map((a) => ({
-    kind: "create", pointer: a.pointer, value: a.value,
-  }));
-  for (const s of result.skipped) {
-    if (s.reason === "already equal") continue;
-    edits.push({ kind: "conflict", pointer: s.pointer, reason: s.reason, existing: s.existing, desired: s.desired });
-  }
-  const { formatRootConfigPreserving, formatRootConfig } = await import("./root-config.js");
-  const { parseRootConfigPreservingOrder } = await import("./root-config.js");
-  const { setPointer } = await import("./json-pointer.js");
-  let bytes;
-  let docForWrite = result.doc;
-  try {
-    const { value: sourceValue, format: sourceFormat } = parseRootConfigPreservingOrder(docResult.raw ?? "");
-    docForWrite = sourceValue && typeof sourceValue === "object" ? sourceValue : result.doc;
-    for (const entry of result.applied) {
-      docForWrite = setPointer(docForWrite, entry.pointer, entry.value);
-    }
-    bytes = Buffer.from(formatRootConfigPreserving(docForWrite), "utf8");
-    void sourceFormat;
-  } catch {
-    bytes = Buffer.from(formatRootConfig(result.doc), "utf8");
-  }
-  const newSha = bytesHashString(stableStringify(docForWrite));
-  const installedPointers = [...previousPointers];
-  for (const e of result.applied) {
-    const idx = installedPointers.findIndex((p) => p.pointer === e.pointer);
-    const previousEntry = docResult.before?.[e.pointer];
-    const next = {
-      pointer: e.pointer, strategy: "value",
-      installedSha256: bytesHashString(stableStringify(e.value)),
-      previous: previousEntry == null
-        ? { existed: false }
-        : { existed: true, value: previousEntry },
-    };
-    if (idx >= 0) installedPointers[idx] = next;
-    else installedPointers.push(next);
-  }
-  for (const e of result.skipped) {
-    if (e.reason !== "already equal") continue;
-    const idx = installedPointers.findIndex((p) => p.pointer === e.pointer);
-    if (idx >= 0) continue;
-    installedPointers.push({
-      pointer: e.pointer, strategy: "value",
-      installedSha256: bytesHashString(stableStringify(e.existing ?? null)),
-      previous: { existed: true, value: e.existing },
-    });
-  }
-  return {
-    kind: edits.some((e) => e.kind === "conflict") ? "conflict" : (edits.length ? "update" : "noop"),
-    op: "root-config",
-    target,
-    relPath: detected.relative,
-    bytes,
-    desiredSha: newSha,
-    currentSha: docResult.sha256 ?? null,
-    edits,
-    pointerRecords: installedPointers,
-    format: docResult.format,
-    document: docForWrite,
-    reason: edits.length === 0
-      ? "no installer-owned entries missing"
-      : `apply ${result.applied.length} / skip ${result.skipped.length}`,
-  };
 }

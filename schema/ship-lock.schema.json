@@ -6,13 +6,13 @@
   "required": ["contractVersion", "manager", "files", "integrity"],
   "additionalProperties": false,
   "properties": {
-    "contractVersion": { "enum": [1, 2] },
+    "contractVersion": { "enum": [1, 2, 3] },
     "manager": {
       "type": "object",
       "required": ["schemaVersion", "name", "version", "appliedAt", "config"],
       "additionalProperties": false,
       "properties": {
-        "schemaVersion": { "enum": [1, 2] },
+        "schemaVersion": { "enum": [1, 2, 3] },
         "name": { "type": "string", "pattern": "^opencode-ship$" },
         "version": { "type": "string", "minLength": 1 },
         "templateSet": { "type": "string", "minLength": 1 },
@@ -49,6 +49,7 @@
                   "properties": {
                     "pointer": { "type": "string", "pattern": "^/" },
                     "strategy": { "enum": ["value", "object-entry", "array-member"] },
+                    "scope": { "enum": ["core", "engineering"] },
                     "installedSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                     "previous": {
                       "type": "object",

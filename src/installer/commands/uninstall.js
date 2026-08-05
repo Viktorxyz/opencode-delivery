@@ -1,17 +1,22 @@
 /*
  * opencode-ship command: uninstall.
  *
- * Removes managed files whose bytes still match the lock, then
- * unlinks the lock itself. user-owned `ship.config.json` is
- * preserved unless `--purge-config` is supplied. Exit 3 on conflict.
+ * Removes managed files whose bytes still match the lock,
+ * restores the consumer's root opencode.json to its preinstall
+ * state using the previously recorded `previous` values, and
+ * unlinks the lock itself. All file operations, the root-config
+ * restoration, and the lock deletion are part of a single
+ * transactional plan so a crash mid-uninstall leaves a
+ * recoverable journal.
+ *
+ * user-owned `ship.config.json` is preserved unless
+ * `--purge-config` is supplied. Exit 3 on conflict.
  */
 
 import { executePlan } from "../transaction.js";
 import { unlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { previewUninstall } from "../executor.js";
 import { configPath } from "../config.js";
+import { previewUninstall } from "../executor.js";
 
 export async function runUninstall(options) {
   const preview = await previewUninstall({ rootPath: options.rootPath });
@@ -32,8 +37,6 @@ export async function runUninstall(options) {
   if (!tx.ok) {
     return emitFailure(4, tx.error?.message ?? "transaction failure", options.json);
   }
-  const lockPath = resolve(repoRoot, ".opencode", "ship.lock.json");
-  if (existsSync(lockPath)) await unlink(lockPath).catch(() => null);
   if (options.purgeConfig) {
     await unlink(configPath(repoRoot)).catch(() => null);
   }

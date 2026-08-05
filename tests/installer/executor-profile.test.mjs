@@ -40,8 +40,8 @@ test("init: --profile engineering writes manager.profile=engineering in the lock
   assert.equal(r.code, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lock.manager.profile, "engineering");
-  assert.equal(lock.contractVersion, 2);
-  assert.equal(lock.manager.schemaVersion, 2);
+  assert.equal(lock.contractVersion, 3);
+  assert.equal(lock.manager.schemaVersion, 3);
 });
 
 test("init: --profile core writes manager.profile=core in the lock", async (t) => {
