@@ -5,53 +5,36 @@
  * They are stored under `<git-common-dir>/opencode-delivery/manifests/<taskId>.json`
  * (the `opencode-delivery/` directory name is preserved for compatibility with existing
  * manifests already on consumers' machines).
+ *
+ * The shared `resolveGitCommonDir` resolver is the single source of
+ * truth for the storage root so main checkouts and their linked
+ * worktrees agree on the same state directory.
  */
 
 import { readFile, writeFile, rename, mkdir, readdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { open as fsOpen } from "node:fs/promises";
 
-async function runGitCommonDir(repoRoot) {
-  return new Promise((res, rej) => {
-    const proc = spawn(
-      "git",
-      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], shell: false },
-    );
-    let out = "";
-    proc.stdout.on("data", (d) => (out += d.toString()));
-    proc.on("error", rej);
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        rej(new Error(`git rev-parse --git-common-dir failed with ${code}`));
-        return;
-      }
-      const trimmed = out.trim();
-      if (!trimmed) {
-        rej(new Error("git rev-parse returned an empty path"));
-        return;
-      }
-      res(resolve(repoRoot, trimmed));
-    });
-  });
-}
+import { resolveGitCommonDir } from "./git-common-dir.js";
+import { atomicReplaceJson } from "./durable-store.js";
 
 function manifestPath(commonDir, taskId) {
   return join(commonDir, "opencode-delivery", "manifests", `${taskId}.json`);
 }
 
+async function commonDirFromRepoRoot(repoRoot) {
+  return resolveGitCommonDir(repoRoot);
+}
+
 export async function writeManifest(repoRoot, manifest) {
-  const commonDir = await runGitCommonDir(repoRoot);
+  const commonDir = await commonDirFromRepoRoot(repoRoot);
   const path = manifestPath(commonDir, manifest.taskId);
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  await writeFile(tmp, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  await rename(tmp, path);
+  await atomicReplaceJson(path, manifest);
   return resolve(path);
 }
 
 export async function readManifest(repoRoot, taskId) {
-  const commonDir = await runGitCommonDir(repoRoot);
+  const commonDir = await commonDirFromRepoRoot(repoRoot);
   const path = manifestPath(commonDir, taskId);
   try {
     const raw = await readFile(path, "utf8");
@@ -62,7 +45,7 @@ export async function readManifest(repoRoot, taskId) {
 }
 
 export async function listManifests(repoRoot) {
-  const commonDir = await runGitCommonDir(repoRoot);
+  const commonDir = await commonDirFromRepoRoot(repoRoot);
   const dir = join(commonDir, "opencode-delivery", "manifests");
   let names;
   try {
@@ -84,7 +67,7 @@ export async function listManifests(repoRoot) {
 }
 
 export async function deleteManifest(repoRoot, taskId) {
-  const commonDir = await runGitCommonDir(repoRoot);
+  const commonDir = await commonDirFromRepoRoot(repoRoot);
   const path = manifestPath(commonDir, taskId);
   try {
     await unlink(path);
