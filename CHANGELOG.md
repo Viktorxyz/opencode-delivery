@@ -2,26 +2,27 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
-## 1.0.0 — Production contract
+## Unreleased
 
-- The `0.10.0` runtime is promoted to `1.0.0` after the formal neutral dogfood. The runtime is byte- and functionally equivalent to `0.10.0`; only the version, the README status, and this changelog change.
-- `latest` resolves to `1.0.0`. `next` is unused; the 0.10 series stays available as `0.10` for consumers that pin to the major.
+- Work in progress on the 1.0.0 completion plan. No `0.10.0` or `1.0.0` has been published; consumers should keep using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0` tags are placeholders only and must not be pushed.
+- See `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json` for the authoritative task state.
 
-## 0.10.0 — Production-ready controller and pinned workflows
+### Planned (not yet shipped)
 
-- Lock schema promoted to v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
-- `src/state/git-common-dir.js` and `src/state/durable-store.js` provide the shared crash-safe storage under the resolved Git common directory.
-- `src/installer/root-reconciliation.js` is the single source of truth for `install`, `profile-transition`, and `uninstall` root-config edits; the engineering → core transition removes the Plan Mode block and restores the prior values byte-for-byte.
-- `scripts/vendor-sync.mjs` vendors 14 mattpocock and 10 obra/superpowers skills with immutable commit pins, MIT license files, and adapted integration footers; the closure test in `tests/package/vendor-closure.test.mjs` fails closed on hash drift, missing license, or placeholder markers.
+These changes are present in source on the `release/1.0-completion` branch but are not production-ready and have not been published. Items will move to a dated release header only after the relevant plan task is verified end-to-end and the formal registry dogfood passes.
+
+- Lock schema v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
+- `src/state/git-common-dir.js` and `src/state/durable-store.js` for the shared crash-safe storage under the resolved Git common directory.
+- `src/installer/root-reconciliation.js` as the single source of truth for `install`, `profile-transition`, and `uninstall` root-config edits; the engineering → core transition removes the Plan Mode block and restores the prior values byte-for-byte.
+- `scripts/vendor-sync.mjs` vendoring 14 mattpocock and 10 obra/superpowers skills with immutable commit pins, MIT license files, and adapted integration footers.
 - New agents: `ship-controller`, `ship-planner`, `ship-task-builder`, `ship-task-reviewer`, `ship-final-standards-reviewer`, `ship-final-spec-reviewer`. New commands: `ship-deliver`, `ship-resume`, `ship-status`.
 - New CLI flags: `--planner-model`, `--builder-model`, `--final-reviewer-model` for missing-config synthesis.
-- `src/workflow/plan.js` is the immutable PlanV2 validator; `src/workflow/plan-store.js` persists revisions under `<git-common-dir>/opencode-ship/plans/`.
-- `src/workflow/workspace.js` computes the reproducible workspace manifest; `src/workflow/task-review.js` validates the Spec + Quality verdict; `src/workflow/three-round-breaker.js` caps failed rounds at three; `src/workflow/commit-gate.js` is the deterministic commit eligibility check.
-- `src/workflow/compaction.js` is the bounded 4 KiB compaction block; `src/workflow/final-review.js` binds the Standards and Spec axes to one HEAD + package hash.
-- `src/tools/envelope.js` is the contract-version-2 success/failure envelope; `src/drivers/github-command-policy.js` is the fixed `gh` allowlist.
-- `src/state/github-operation-store.js` records every typed GitHub operation with idempotency.
-- Old prototype modules under `src/installer/` (`plan.js`, `plan-store.js`, `plan-mirror.js`, `run-store.js`, `task-brief.js`, `task-reviewer.js`, `build-ownership.js`, `commit-binding.js`, `three-round-breaker.js`, `compaction.js`, `final-review.js`, `ready-gate.js`) are removed; their tests are removed alongside them.
-- `scripts/qualify.mjs` produces a machine-readable qualification report (gates, pins, tarball digest) suitable for uploading to a GitHub Release.
+- `src/workflow/plan.js` and `src/workflow/plan-store.js` for immutable PlanV2 and approvals under `<git-common-dir>/opencode-ship/plans/`.
+- `src/workflow/workspace.js`, `task-review.js`, `three-round-breaker.js`, and `commit-gate.js` for the deterministic task controller.
+- `src/workflow/compaction.js` for the bounded 4 KiB compaction block; `src/workflow/final-review.js` for binding Standards and Spec axes to one HEAD + package hash.
+- `src/tools/envelope.js` as the contract-version-2 success/failure envelope; `src/drivers/github-command-policy.js` as the fixed `gh` allowlist.
+- `src/state/github-operation-store.js` for typed GitHub operation records with idempotency.
+- `scripts/qualify.mjs` for a machine-readable qualification report (gates, pins, tarball digest) suitable for uploading to a GitHub Release.
 
 ## 0.9.1 — Restore a truthful green baseline
 

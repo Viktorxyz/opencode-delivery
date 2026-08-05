@@ -28,6 +28,7 @@ import {
   writeFile,
   readFile,
   rename,
+  link,
   mkdir,
   readdir,
   unlink,
@@ -87,11 +88,14 @@ export async function atomicReplaceJson(path, value) {
  * stable error. Use this for plan bytes, approval seals, mirror
  * chunks, and other append-only history.
  *
- * Atomicity is provided by `open(path, 'wx')` (exclusive create). A
- * second concurrent publisher races on the kernel-level O_EXCL flag;
- * the loser sees an EEXIST and is rejected. Once the final file is
- * created it is fsynced, the parent directory is fsynced, and the
- * result cannot be silently overwritten by another publisher.
+ * Atomicity is provided by a sibling-temp + fsync + `link` + parent
+ * fsync sequence. The data is fully written and fsynced under a
+ * temporary sibling path before the final pathname is created via
+ * `link()`, which POSIX guarantees is atomic: the `link` syscall fails
+ * with EEXIST if the destination already exists, so a concurrent
+ * publisher cannot silently overwrite the first winner's bytes. After
+ * `link()` succeeds the temporary is unlinked so the durable record
+ * lives only at the canonical path.
  *
  * @param {string} path
  * @param {unknown} value
@@ -103,21 +107,27 @@ export async function publishImmutableJson(path, value) {
   const target = resolve(path);
   const parent = dirname(target);
   await mkdir(parent, { recursive: true });
-  let handle;
-  try {
-    handle = await fsOpen(target, "wx", 0o600);
-  } catch (err) {
-    if (err && (err.code === "EEXIST" || err.code === "EACCES")) {
-      throw new Error(`publishImmutableJson: target already exists: ${target}`);
-    }
-    throw err;
+  if (existsSync(target)) {
+    throw new Error(`publishImmutableJson: target already exists: ${target}`);
   }
+  const tmp = `${target}.${randomToken()}.immutable.tmp`;
+  const handle = await fsOpen(tmp, "w", 0o600);
   try {
     await handle.writeFile(ensureString(value), "utf8");
     await handle.sync();
   } finally {
     await handle.close();
   }
+  try {
+    await link(tmp, target);
+  } catch (err) {
+    await unlink(tmp).catch(() => null);
+    if (err && (err.code === "EEXIST" || err.code === "EACCES")) {
+      throw new Error(`publishImmutableJson: target already exists: ${target}`);
+    }
+    throw err;
+  }
+  await unlink(tmp).catch(() => null);
   await fsyncDir(parent);
 }
 
@@ -206,15 +216,13 @@ export async function withResourceLock(stateDir, resourceKey, input) {
   try {
     return await callback();
   } finally {
-    if (quarantinedThisAcquire) {
-      await readdir(lockDir).then(async (entries) => {
-        for (const e of entries) await unlink(join(lockDir, e)).catch(() => null);
-      }).catch(() => null);
-      await unlink(lockDir).catch(() => null);
-    } else {
-      await unlink(ownerPath).catch(() => null);
+    await unlink(ownerPath).catch(() => null);
+    if (!quarantinedThisAcquire) {
       await unlink(lockDir).catch(() => null);
     }
+    // When we quarantined a stale lock, the lock directory may still
+    // contain a `stale-*` audit file. The directory is intentionally
+    // preserved so post-mortem tooling can inspect what happened.
   }
 }
 

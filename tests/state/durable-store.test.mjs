@@ -129,18 +129,30 @@ suite("durable-store: withResourceLock", { concurrency: false }, () => {
 
   test("quarantines a stale same-host dead-PID lock after 120s", { serial: true }, async () => {
     const dir = await mkdtemp(resolve(tmpdir(), "ocd-lock-"));
-    const lockDir = join(dir, "opencode-ship", "locks", "deadbeef", "owner.json");
-    await mkdir(dirname(lockDir), { recursive: true });
+    const { createHash } = await import("node:crypto");
+    const { hostname: osHostname } = await import("node:os");
+    const keyHash = createHash("sha256").update("stale").digest("hex");
+    const ownerPath = join(dir, "locks", keyHash, "owner.json");
+    await mkdir(dirname(ownerPath), { recursive: true });
     const staleTs = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    // Pick a pid that is guaranteed dead on the current host. The
+    // kernel returns ESRCH for an unmapped pid, which the production
+    // code interprets as "not alive".
+    const deadPid = 0x7ffffff0;
     const owner = {
-      pid: 999999,
-      hostname: "no-such-host-xyz",
+      pid: deadPid,
+      hostname: osHostname(),
       resource: "stale",
       startedAt: staleTs,
     };
-    await writeFile(lockDir, JSON.stringify(owner));
+    await writeFile(ownerPath, JSON.stringify(owner));
     const out = await withResourceLock(dir, "stale", async () => "ran");
     assert.equal(out, "ran");
+    const after = await readdir(join(dir, "locks", keyHash));
+    assert.ok(
+      after.some((f) => f.startsWith("stale-")),
+      `expected stale- quarantine file, got ${after.join(", ")}`,
+    );
     await rm(dir, { recursive: true, force: true });
   });
 });
