@@ -4,8 +4,50 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## Unreleased
 
-- Work in progress on the 1.0.0 completion plan. No `0.10.0` or `1.0.0` has been published; consumers should keep using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0` tags are placeholders only and must not be pushed.
-- See `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json` for the authoritative task state.
+- The `release/1.0-completion` branch contains the complete
+  production runtime for the planned `0.10.0` release. No
+  `0.10.0` or `1.0.0` has been published; consumers should keep
+  using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0`
+  tags are placeholders only and must not be pushed.
+- See `RELEASING.md` for the operational runbook and
+  `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json`
+  for the authoritative task state.
+
+### Shipped source on `release/1.0-completion` (not yet released)
+
+These changes are present in source on the
+`release/1.0-completion` branch but are not production-ready
+until the formal registry dogfood on the npm-published `0.10.0`
+succeeds. Items will move to a dated release header only after
+that step completes.
+
+- Crash-safe Git-common storage: link()-based atomic publication,
+  SHA-256 hashed resource locks, explicit legacy migration from
+  the `opencode-delivery/` path to `opencode-ship/delivery/`.
+- Fail-closed profile transitions and uninstall: pointer
+  `installedSha256` verification refuses to overwrite user edits;
+  transactional `--purge-config`.
+- Real upstream vendoring: 24 SKILL.md files plus companion
+  files from the pinned
+  `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`
+  and `obra/superpowers@44c9b2d6e889982ac18c27d05a19fefe335194e1`
+  commits, frozen byte-identical under `vendor/upstreams/`.
+- Config V2: `workflow.models.{planner,builder,finalReviewer}` are
+  required for the engineering profile; core remains unchanged.
+- 24 typed tools: 9 existing delivery tools + 7 Git/GitHub
+  control-plane tools + 8 workflow tools (`ship_plan_*`,
+  `ship_run_*`, `ship_task_*`, `ship_resume`, `ship_status`).
+- Contract-version-2 envelope + immutable GitHub operation store.
+- Deterministic run reducer + controller with commit trailers.
+- Per-run resume lock + crash reconciliation + mirror
+  restoration.
+- Same-HEAD gate across final Standards/Spec reviews,
+  verification, CI, PR, and Ready.
+- Two-task workflow qualification with fake GitHub/model
+  harness.
+- Nine-job release qualification pipeline
+  (`.github/workflows/release.yml`) with one canonical pack
+  artifact, SPDX SBOM, and machine-readable qualification report.
 
 ### Planned (not yet shipped)
 
