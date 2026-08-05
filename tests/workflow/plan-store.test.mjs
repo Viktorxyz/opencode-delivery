@@ -24,7 +24,7 @@ import {
   readLatestPlan,
   plansRoot,
 } from "../../src/workflow/plan-store.js";
-import { validatePlanV2, computePlanHash, SUPPORTED_SCHEMA_VERSION } from "../../src/workflow/plan.js";
+import { validatePlanV2, computePlanHash, SUPPORTED_SCHEMA_VERSION, canonicalize } from "../../src/workflow/plan.js";
 
 async function makeRepo() {
   const dir = await mkdtemp(join(tmpdir(), "plans-"));
@@ -84,7 +84,7 @@ function validPlan(overrides = {}) {
 }
 
 test("plan-store: publishPlanRevision writes a record under the common-dir", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   const r = await publishPlanRevision(dir, validPlan());
   assert.equal(r.recorded, true);
@@ -96,7 +96,7 @@ test("plan-store: publishPlanRevision writes a record under the common-dir", asy
 });
 
 test("plan-store: re-submitting the same plan is a no-op", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   const plan = validPlan();
   const r1 = await publishPlanRevision(dir, plan);
@@ -106,7 +106,7 @@ test("plan-store: re-submitting the same plan is a no-op", async (t) => {
 });
 
 test("plan-store: rejects an invalid plan", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   await assert.rejects(
     () => publishPlanRevision(dir, { ...validPlan(), workflowId: "" }),
@@ -115,7 +115,7 @@ test("plan-store: rejects an invalid plan", async (t) => {
 });
 
 test("plan-store: listRevisions returns every persisted revision in order", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   await publishPlanRevision(dir, validPlan({ revision: 1 }));
   await publishPlanRevision(dir, validPlan({ revision: 2, goal: "ship a different plan" }));
@@ -126,7 +126,7 @@ test("plan-store: listRevisions returns every persisted revision in order", asyn
 });
 
 test("plan-store: readLatestPlan returns the highest revision", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   await publishPlanRevision(dir, validPlan({ revision: 1 }));
   await publishPlanRevision(dir, validPlan({ revision: 2, goal: "ship another plan" }));
@@ -135,9 +135,11 @@ test("plan-store: readLatestPlan returns the highest revision", async (t) => {
 });
 
 test("plan-store: publishApproval writes an approval record", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
-  await publishPlanRevision(dir, validPlan());
+  const plan = validPlan();
+  const planHash = computePlanHash(plan);
+  await publishPlanRevision(dir, plan);
   const r = await publishApproval(dir, {
     workflowId: "wf-1",
     revision: 1,
@@ -149,6 +151,7 @@ test("plan-store: publishApproval writes an approval record", async (t) => {
     chunkHashes: ["a".repeat(64), "b".repeat(64)],
     baseSha: "0123456789abcdef0123456789abcdef01234567",
     models: { planner: "openai/gpt-5.6-sol", builder: "minimax/MiniMax-M3", finalReviewer: "openai/gpt-5.6-sol" },
+    sha256: planHash,
   });
   assert.equal(r.recorded, true);
   const list = await listRevisions(dir, "wf-1");
@@ -156,7 +159,7 @@ test("plan-store: publishApproval writes an approval record", async (t) => {
 });
 
 test("plan-store: publishMirrorReceipt writes a mirror record", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   await publishPlanRevision(dir, validPlan());
   const r = await publishMirrorReceipt(dir, {
@@ -172,21 +175,21 @@ test("plan-store: publishMirrorReceipt writes a mirror record", async (t) => {
 });
 
 test("plan-store: plansRoot returns the durable state dir under the common dir", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   const root = await plansRoot(dir, "wf-1");
   assert.ok(root.includes("opencode-ship/plans/wf-1"));
 });
 
 test("plan-store: listRevisions returns empty for unknown workflow", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   const list = await listRevisions(dir, "wf-missing");
   assert.equal(list.length, 0);
 });
 
 test("plan-store: readPlanRevision returns null for missing", async (t) => {
-  const dir = await makeRepo();
+  const dir = await makeRepo(); const repoRoot = dir;
   t.after(async () => rm(dir, { recursive: true, force: true }));
   const v = await readPlanRevision(dir, "wf-1", 99);
   assert.equal(v, null);
@@ -197,4 +200,100 @@ test("plan-store: validatePlanV2 is the gate before publish", () => {
   assert.equal(r.ok, true);
   const r2 = validatePlanV2({ ...validPlan(), tasks: [] });
   assert.equal(r2.ok, false);
+});
+
+import { hydratePlanRevisionFromMirror, publishRejection } from "../../src/workflow/plan-store.js";
+
+const SAMPLE_PLAN = {
+  schemaVersion: 2,
+  workflowId: "wf-restore",
+  revision: 1,
+  supersedes: null,
+  authoredBy: { sessionID: "sess-1", model: "openai/gpt-5.6-sol", createdAt: new Date().toISOString() },
+  source: { repository: "owner/repo", issueNumber: 7, issueUrl: "https://github.com/owner/repo/issues/7", baseBranch: "main", baseSha: "0".repeat(40) },
+  goal: "Restore this plan from issue mirror chunks.",
+  architecture: { summary: "test", decisions: [] },
+  constraints: [],
+  files: [{ path: "src/example.ts", action: "create", responsibility: "skeleton", taskIds: ["t1"] }],
+  tasks: [{
+    id: "t1", ordinal: 1, title: "First task", objective: "establish skeleton", dependsOn: [],
+    preconditions: [{ kind: "head-is", value: "0".repeat(40) }],
+    changes: [{ path: "src/example.ts", operation: "create", symbols: [], instructions: ["scaffold"], preserve: ["license header"] }],
+    interfaces: [], tests: [], commands: [], acceptance: [{ id: "a1", assertion: "file exists", evidence: ["fs.exists"] }],
+    commit: { message: "feat: add example" },
+  }],
+  finalAcceptance: [], outOfScope: [], recovery: [],
+};
+
+test("plan-store: restoration from a verified mirror yields a byte-equivalent plan", async (t) => {
+  const dir = await makeRepo(); const repoRoot = dir;
+  t.after(async () => rm(dir, { recursive: true, force: true }));
+  const expectedHash = computePlanHash(SAMPLE_PLAN);
+  const canonical = canonicalize(SAMPLE_PLAN);
+  const chunks = [canonical.slice(0, Math.floor(canonical.length / 2)), canonical.slice(Math.floor(canonical.length / 2))];
+  const r = await hydratePlanRevisionFromMirror(repoRoot, "wf-restore", 1, { chunks, expectedHash });
+  assert.equal(r.hash, expectedHash);
+  const restored = await readLatestPlan(repoRoot, "wf-restore");
+  assert.equal(restored.hash, expectedHash);
+  assert.deepEqual(restored.plan, SAMPLE_PLAN);
+});
+
+test("plan-store: restoration rejects a chunk-hash mismatch", async (t) => {
+  const dir = await makeRepo(); const repoRoot = dir;
+  t.after(async () => rm(dir, { recursive: true, force: true }));
+  const expectedHash = computePlanHash(SAMPLE_PLAN);
+  const canonical = canonicalize(SAMPLE_PLAN);
+  const tampered = canonical.replace("wf-restore", "wf-other");
+  const chunks = [tampered];
+  await assert.rejects(
+    hydratePlanRevisionFromMirror(repoRoot, "wf-restore", 1, { chunks, expectedHash }),
+    /chunk-hash mismatch/,
+  );
+});
+
+test("plan-store: rejection halts the workflow and is durable", async (t) => {
+  const dir = await makeRepo(); const repoRoot = dir;
+  t.after(async () => rm(dir, { recursive: true, force: true }));
+  const r = await publishRejection(repoRoot, {
+    workflowId: "wf-reject",
+    revision: 1,
+    decision: "rejected",
+    rejectedBy: "user-1",
+    rejectedAt: new Date().toISOString(),
+    reason: "scope is bigger than expected",
+  });
+  assert.equal(r.recorded, true);
+  const second = await publishRejection(repoRoot, {
+    workflowId: "wf-reject",
+    revision: 1,
+    decision: "rejected",
+    rejectedBy: "user-1",
+    rejectedAt: new Date().toISOString(),
+    reason: "scope is bigger than expected",
+  });
+  assert.equal(second.recorded, false, "second rejection is a no-op");
+});
+
+test("plan-store: publishApproval rejects a sha256 mismatch with the plan record", async (t) => {
+  const dir = await makeRepo(); const repoRoot = dir;
+  t.after(async () => rm(dir, { recursive: true, force: true }));
+  const v = validatePlanV2(SAMPLE_PLAN);
+  assert.equal(v.ok, true);
+  await publishPlanRevision(repoRoot, SAMPLE_PLAN);
+  await assert.rejects(
+    publishApproval(repoRoot, {
+      workflowId: "wf-restore",
+      revision: 1,
+      decision: "approved",
+      sessionID: "sess-1",
+      approvedBy: "user-1",
+      approvedAt: new Date().toISOString(),
+      chunkIds: [],
+      chunkHashes: [],
+      baseSha: "0".repeat(40),
+      models: { planner: "openai/gpt-5.6-sol", builder: "minimax/MiniMax-M3", finalReviewer: "openai/gpt-5.6-sol" },
+      sha256: "f".repeat(64),
+    }),
+    /sha256 mismatch/,
+  );
 });
