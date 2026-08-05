@@ -2,6 +2,22 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.10.0 — Production-ready controller and pinned workflows
+
+- Lock schema promoted to v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
+- `src/state/git-common-dir.js` and `src/state/durable-store.js` provide the shared crash-safe storage under the resolved Git common directory.
+- `src/installer/root-reconciliation.js` is the single source of truth for `install`, `profile-transition`, and `uninstall` root-config edits; the engineering → core transition removes the Plan Mode block and restores the prior values byte-for-byte.
+- `scripts/vendor-sync.mjs` vendors 14 mattpocock and 10 obra/superpowers skills with immutable commit pins, MIT license files, and adapted integration footers; the closure test in `tests/package/vendor-closure.test.mjs` fails closed on hash drift, missing license, or placeholder markers.
+- New agents: `ship-controller`, `ship-planner`, `ship-task-builder`, `ship-task-reviewer`, `ship-final-standards-reviewer`, `ship-final-spec-reviewer`. New commands: `ship-deliver`, `ship-resume`, `ship-status`.
+- New CLI flags: `--planner-model`, `--builder-model`, `--final-reviewer-model` for missing-config synthesis.
+- `src/workflow/plan.js` is the immutable PlanV2 validator; `src/workflow/plan-store.js` persists revisions under `<git-common-dir>/opencode-ship/plans/`.
+- `src/workflow/workspace.js` computes the reproducible workspace manifest; `src/workflow/task-review.js` validates the Spec + Quality verdict; `src/workflow/three-round-breaker.js` caps failed rounds at three; `src/workflow/commit-gate.js` is the deterministic commit eligibility check.
+- `src/workflow/compaction.js` is the bounded 4 KiB compaction block; `src/workflow/final-review.js` binds the Standards and Spec axes to one HEAD + package hash.
+- `src/tools/envelope.js` is the contract-version-2 success/failure envelope; `src/drivers/github-command-policy.js` is the fixed `gh` allowlist.
+- `src/state/github-operation-store.js` records every typed GitHub operation with idempotency.
+- Old prototype modules under `src/installer/` (`plan.js`, `plan-store.js`, `plan-mirror.js`, `run-store.js`, `task-brief.js`, `task-reviewer.js`, `build-ownership.js`, `commit-binding.js`, `three-round-breaker.js`, `compaction.js`, `final-review.js`, `ready-gate.js`) are removed; their tests are removed alongside them.
+- `scripts/qualify.mjs` produces a machine-readable qualification report (gates, pins, tarball digest) suitable for uploading to a GitHub Release.
+
 ## 0.9.1 — Restore a truthful green baseline
 
 - `src/installer/plan-mirror.js` documents its options through a JSDoc typedef and rejects unknown options.
