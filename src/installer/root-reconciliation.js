@@ -136,6 +136,21 @@ export async function planRootReconciliation(input) {
 
   const fileMissing = !existsSync(target);
   if (fileMissing && !input.forceRepair) {
+    // Profile transition with no root config: still update the
+    // lock so engineering-only records are dropped and core
+    // records are kept / seeded. The bytes are null because
+    // there is no file to write.
+    if (mode === "profile-transition") {
+      return {
+        kind: "noop",
+        op: "root-config",
+        target,
+        relPath: detected.relative,
+        reason: "no root opencode.json present",
+        edits: [],
+        pointerRecords: reconcileRecordsAfterTransition(descriptors, previousRecords),
+      };
+    }
     return {
       kind: "noop",
       op: "root-config",
@@ -199,6 +214,23 @@ export async function planRootReconciliation(input) {
     descriptors,
     previousRecords,
   });
+}
+
+function reconcileRecordsAfterTransition(descriptors, previousRecords) {
+  const desiredCore = new Set(descriptors.filter((d) => d.scope === "core").map((d) => d.pointer));
+  const out = previousRecords.filter((r) => r.scope === "core" || (r.scope === "engineering" && desiredCore.has(r.pointer)));
+  const seen = new Set(out.map((r) => r.pointer));
+  for (const d of descriptors) {
+    if (seen.has(d.pointer)) continue;
+    out.push({
+      pointer: d.pointer,
+      strategy: d.strategy,
+      scope: d.scope,
+      installedSha256: d.value !== undefined ? bytesHashString(stableStringify(d.value)) : null,
+      previous: { existed: false },
+    });
+  }
+  return out;
 }
 
 function planInstallRoot({ doc, target, relPath, descriptors, previousRecords }) {
