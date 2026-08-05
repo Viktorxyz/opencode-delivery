@@ -10,6 +10,10 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import * as fs from "node:fs/promises";
 import { parseCommand, parseFlags, helpText } from "../../src/installer/cli-args.js";
 import { resolveModelRoles, validateEngineeringConfig } from "../../src/installer/engineering-config.js";
 import { isValidProfile, DEFAULT_PROFILE } from "../../src/profile.js";
@@ -114,4 +118,88 @@ test("DEFAULT_PROFILE: is core", () => {
   assert.equal(DEFAULT_PROFILE, "core");
   assert.ok(isValidProfile("core"));
   assert.ok(isValidProfile("engineering"));
+});
+
+test("Config V2: engineering profile requires explicit workflow.models", async () => {
+  const { loadConfig } = await import("../../src/installer/config.js");
+  const dir = await mkdtemp(resolve(tmpdir(), "ocd-cfg-"));
+  try {
+    const cfgDir = resolve(dir, ".opencode");
+    await fs.mkdir(cfgDir, { recursive: true });
+    await fs.writeFile(resolve(cfgDir, "ship.config.json"), JSON.stringify({
+      schemaVersion: 2,
+      profile: "engineering",
+    }));
+    const r = await loadConfig(dir);
+    assert.equal(r.ok, false, "engineering without workflow.models must fail closed");
+    assert.ok(/workflow|model/i.test(JSON.stringify(r.error ?? {})), `unexpected error: ${JSON.stringify(r.error)}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Config V2: engineering with explicit models passes", async () => {
+  const { loadConfig } = await import("../../src/installer/config.js");
+  const dir = await mkdtemp(resolve(tmpdir(), "ocd-cfg-"));
+  try {
+    const cfgDir = resolve(dir, ".opencode");
+    await fs.mkdir(cfgDir, { recursive: true });
+    await fs.writeFile(resolve(cfgDir, "ship.config.json"), JSON.stringify({
+      schemaVersion: 2,
+      profile: "engineering",
+      workflow: {
+        models: {
+          planner: "openai/gpt-5.6-sol",
+          builder: "minimax/MiniMax-M3",
+          finalReviewer: "openai/gpt-5.6-sol",
+        },
+      },
+    }));
+    const r = await loadConfig(dir);
+    assert.equal(r.ok, true, `engineering with explicit models must load: ${JSON.stringify(r.error)}`);
+    assert.equal(r.value.workflow.models.planner, "openai/gpt-5.6-sol");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Config V2: core profile does not require workflow block", async () => {
+  const { loadConfig } = await import("../../src/installer/config.js");
+  const dir = await mkdtemp(resolve(tmpdir(), "ocd-cfg-"));
+  try {
+    const cfgDir = resolve(dir, ".opencode");
+    await fs.mkdir(cfgDir, { recursive: true });
+    await fs.writeFile(resolve(cfgDir, "ship.config.json"), JSON.stringify({
+      schemaVersion: 2,
+      profile: "core",
+    }));
+    const r = await loadConfig(dir);
+    assert.equal(r.ok, true, `core without workflow must load: ${JSON.stringify(r.error)}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Config V2: schema rejects a malformed model id", async () => {
+  const { loadConfig } = await import("../../src/installer/config.js");
+  const dir = await mkdtemp(resolve(tmpdir(), "ocd-cfg-"));
+  try {
+    const cfgDir = resolve(dir, ".opencode");
+    await fs.mkdir(cfgDir, { recursive: true });
+    await fs.writeFile(resolve(cfgDir, "ship.config.json"), JSON.stringify({
+      schemaVersion: 2,
+      profile: "engineering",
+      workflow: {
+        models: {
+          planner: "not-a-valid-model-id",
+          builder: "minimax/MiniMax-M3",
+          finalReviewer: "openai/gpt-5.6-sol",
+        },
+      },
+    }));
+    const r = await loadConfig(dir);
+    assert.equal(r.ok, false, "malformed model id must fail closed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
