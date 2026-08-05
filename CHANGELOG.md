@@ -2,6 +2,11 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 1.0.0 — Production contract
+
+- The `0.10.0` runtime is promoted to `1.0.0` after the formal neutral dogfood. The runtime is byte- and functionally equivalent to `0.10.0`; only the version, the README status, and this changelog change.
+- `latest` resolves to `1.0.0`. `next` is unused; the 0.10 series stays available as `0.10` for consumers that pin to the major.
+
 ## 0.10.0 — Production-ready controller and pinned workflows
 
 - Lock schema promoted to v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
