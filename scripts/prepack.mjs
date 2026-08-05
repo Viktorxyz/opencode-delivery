@@ -2,7 +2,7 @@
 /* npm `prepack` hook: build first, validate catalog, fail closed if any
  * required artifact is missing. */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -52,6 +52,9 @@ for (const path of [
   "schema/project-adapter.schema.json",
   "schema/ship-config.schema.json",
   "schema/ship-lock.schema.json",
+  "vendor/sources.json",
+  "vendor/mattpocock/LICENSE",
+  "vendor/superpowers/LICENSE",
   "THIRD_PARTY_NOTICES.md",
   "LICENSE",
   "README.md",
@@ -60,6 +63,26 @@ for (const path of [
   if (!existsSync(resolve(root, path))) {
     fail(`expected packaged artifact missing: ${path}`);
   }
+}
+
+// Verify that every vendored engineering skill is present and
+// has a non-empty body. The closure test in
+// `tests/package/vendor-closure.test.mjs` re-validates the full
+// manifest; this loop is a fast guard against an empty
+// `scripts/vendor-sync.mjs` run leaking into a published tarball.
+const skillNames = [
+  "setup-engineering-workflow", "engineering-workflow", "grilling",
+  "domain-modeling", "grill-with-docs", "triage", "to-spec", "to-tickets",
+  "wayfinder", "handoff", "research", "prototype", "codebase-design", "code-review",
+  "brainstorming", "writing-plans", "executing-plans", "subagent-driven-development",
+  "dispatching-parallel-agents", "test-driven-development", "systematic-debugging",
+  "verification-before-completion", "requesting-code-review", "receiving-code-review",
+];
+for (const name of skillNames) {
+  const p = resolve(root, "assets", "skills", name, "SKILL.md");
+  if (!existsSync(p)) fail(`expected engineering skill missing: ${p}`);
+  const st = statSync(p);
+  if (st.size < 200) fail(`engineering skill body is suspiciously small: ${p}`);
 }
 
 // Verify the vendor manifest is well-formed. An empty manifest is

@@ -11,12 +11,3 @@ documentation as authoritative; the user's answers resolve only
 the gaps the documentation does not already cover. The output
 is the same resolved-ambiguities list as plain `grilling`, with
 each resolution citing the doc section that informed it.
-
-## Ship integration
-
-This skill is part of the engineering profile shipped by
-`opencode-ship@1.0`. The strong planner child session is
-configured with `openai/gpt-5.6-sol` and the durable workflow
-state lives under `<git-common-dir>/opencode-ship/`. All
-GitHub mutations go through Ship's typed tools; never use
-`gh api` or raw shell.

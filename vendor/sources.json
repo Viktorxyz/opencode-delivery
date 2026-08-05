@@ -4,23 +4,267 @@
   "sources": [
     {
       "repository": "mattpocock/skills",
-      "sourceRef": "PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580",
-      "upstreamPath": "skills/triage/SKILL.md",
-      "localTarget": "assets/skills/triage/SKILL.md",
-      "sourceSha256": "02e513af3c4f6cfb58b0cc85198ff8a10a6bf292f8c08f511573ed1b4f4fbcf0",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/code-review/SKILL.md",
+      "localTarget": "assets/skills/code-review/SKILL.md",
+      "sourceSha256": "1cd3fff37d77a4c30ca266ca46836716c44f6cb58b4e427ca81ab9ef3e9be554",
+      "localSha256": "e660bbc335169c0bf2e6ba834d9c80cbbe73e2465a56f1febc481b2fd56f9a25",
       "reuseMode": "adapted",
       "license": "MIT",
-      "adaptationNote": "Initial entry is a placeholder SKILL.md describing the vendored contract. The real file is pending vendoring from mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c; the current local file is a stub that lets prepack and the engineering profile pass while the real vendor is in progress. The sourceSha256 above is the SHA of the stub; it will be regenerated when the real SKILL.md replaces the stub. PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580 is intentionally not a real SHA — replace it with the real immutable commit when the real file lands."
+      "adaptationNote": "Imported verbatim; review findings are recorded as task reviewer Spec/Quality verdicts and never as a free-form chat reply."
     },
     {
       "repository": "mattpocock/skills",
-      "sourceRef": "PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580",
-      "upstreamPath": "skills/grill-with-docs/SKILL.md",
-      "localTarget": "assets/skills/grill-with-docs/SKILL.md",
-      "sourceSha256": "460ff74f2adb91f279268713aaba21f3193cc956ff9eae3915b6ab61113e0930",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/codebase-design/SKILL.md",
+      "localTarget": "assets/skills/codebase-design/SKILL.md",
+      "sourceSha256": "67ba96d83a7f1b098a0f4c6938bc9d705e7e5802c9af62335a1a84507e5a7e8f",
+      "localSha256": "0132dc69496d338b7c498eec5444d5a4cab04567264cef9b42914f16d520d2ee",
       "reuseMode": "adapted",
       "license": "MIT",
-      "adaptationNote": "Initial entry is a placeholder SKILL.md describing the vendored contract. The real file is pending vendoring from mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c; the current local file is a stub that lets prepack and the engineering profile pass while the real vendor is in progress. The sourceSha256 above is the SHA of the stub; it will be regenerated when the real SKILL.md replaces the stub. PLACEHOLDER_PINS_TO_MATTPOCOCK_SKILLS_2ab9580 is intentionally not a real SHA — replace it with the real immutable commit when the real file lands."
+      "adaptationNote": "Imported verbatim; the design is published through Ship's plan-mirror issue comments."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/domain-modeling/SKILL.md",
+      "localTarget": "assets/skills/domain-modeling/SKILL.md",
+      "sourceSha256": "679c09623bd1e49e68c4ad4aa8959220b02bbf4e99e44e0d2d6a071ada9ec534",
+      "localSha256": "0ab8308c6955d12c395ecb5a0a90486d310470d4402af7519d1061d5d1b9be61",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the entities/relationships/invariants output is fed into the strong planner child session."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/engineering-workflow/SKILL.md",
+      "localTarget": "assets/skills/engineering-workflow/SKILL.md",
+      "sourceSha256": "44c7f5fe7e69446563a67b5891146919536ffd81dee556a2e7af70b30e4fd015",
+      "localSha256": "b57d055231c34e3438b4f79dbb7514786c1eee8383a59c83b1191580aba39a7e",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the parent step is wired into Ship's PlanV2 approval pipeline."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/grill-with-docs/SKILL.md",
+      "localTarget": "assets/skills/grill-with-docs/SKILL.md",
+      "sourceSha256": "d2cdf94ca253232cf7d72573dcfcacf379256c415e51b8a8dccb8fb3c866d088",
+      "localSha256": "08bfad814dc546c7719df61e681e4026de1a522f9a96b75e4ac84142d689eeb6",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the upstream reads repo docs as context, the adapted skill reads them through the opencode-ship plan/run mirrors."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/grilling/SKILL.md",
+      "localTarget": "assets/skills/grilling/SKILL.md",
+      "sourceSha256": "5a9e0056a9c1a78886936d5e6c2ab7a9825931e20d8fd4d24dba1a75605877ec",
+      "localSha256": "a39d31a609583041d0490c5c600c34e4d8dc98d7ff9b5c7df1591542f0adbff7",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the structured-question form is preserved so the strong planner can dispatch it."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/handoff/SKILL.md",
+      "localTarget": "assets/skills/handoff/SKILL.md",
+      "sourceSha256": "344bc06789c5aaf7defdb0e2aa0e1b9947fdfe1ce6887810eaca83b0dd472e75",
+      "localSha256": "ae6b649ac726856f9fa14c20e6f90e1f803e8ca3da19ebbd4f99e6ec65d018b1",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the handoff payload is the Ship compact resume block, not a chat-summary."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/prototype/SKILL.md",
+      "localTarget": "assets/skills/prototype/SKILL.md",
+      "sourceSha256": "6325bf93820ca531bb98c5d17ed47d7f31f91f1fec0dacd606349b52132a96af",
+      "localSha256": "ae0fdcdd7a1a4d05e6a4e9181cb6f46dfc6b9d622978322754d72150197fe09e",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; prototype artifacts are written to the consumer's worktree."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/research/SKILL.md",
+      "localTarget": "assets/skills/research/SKILL.md",
+      "sourceSha256": "8fd0abd2a6af67f5e3bedb4ed1fec6de496cde56966c202fc7e69e96d2cb6034",
+      "localSha256": "ed96a686430e372964c38c7daa9b6ab644e7a8fb99e721f68003b80f9358dc83",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the research output is appended to the opencode-ship plan bytes."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/setup-engineering-workflow/SKILL.md",
+      "localTarget": "assets/skills/setup-engineering-workflow/SKILL.md",
+      "sourceSha256": "4957cc8c4aec71711ac6322918bffcef84accfb7a3fdfccc4f0c341ace2e9da4",
+      "localSha256": "8e584e6ea3a39653aa70eb68f19813637bd64317a92c767473ba2822373e93ba",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim and adapted to call Ship-owned plan/run/dispatch/verify primitives instead of OpenCode-specific model ids."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/to-spec/SKILL.md",
+      "localTarget": "assets/skills/to-spec/SKILL.md",
+      "sourceSha256": "294d91189083a3cf45c2785486d5261db3723639a222a301e08fc258b41f8394",
+      "localSha256": "bae2337341bb3dc7a792ad70c194d9aa2d0ae267b56abbc5113a2f135eab0d42",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the spec is published through Ship's typed delivery_issue_comment tool as the parent ticket for vertical children."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/to-tickets/SKILL.md",
+      "localTarget": "assets/skills/to-tickets/SKILL.md",
+      "sourceSha256": "12750ccaa938fa7c9aeb09c506a6db4641bddf4bbb2c993478304f8120daa82b",
+      "localSha256": "7afe8ca1b859fe2143b8d1a269ad061bcd7891b9359e130ada2c9f08e30fc02f",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; vertical tickets are created through Ship's typed delivery_issue tool and linked through delivery_issue_link with `blocks` / `parent-of`."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/triage/SKILL.md",
+      "localTarget": "assets/skills/triage/SKILL.md",
+      "sourceSha256": "76ba50a1f9acba4f0e190a4e08ae2153dc040c0a26b94a1bcf3b011be11cbd10",
+      "localSha256": "0d46fd6903f0d4d6f49932cc0d7b089b89ed8babf6951a7fdbf540c81f83ecec",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the triage labels are written through Ship's typed delivery_issue_labels tool."
+    },
+    {
+      "repository": "mattpocock/skills",
+      "sourceRef": "2ab958093e83e0ec752e6c1c5932da465bf23e0c",
+      "upstreamPath": "skills/wayfinder/SKILL.md",
+      "localTarget": "assets/skills/wayfinder/SKILL.md",
+      "sourceSha256": "41e174065130e91a114a37747b42c4dc0b3074f244d6ec8a91263acd406601aa",
+      "localSha256": "09d95fa97e63cc15258384319394910e11c2c2203413f3db3ad24d7428ea9b91",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the upstream code-finder uses OpenCode search, the adapted skill prefers the consumer's grep/ripgrep."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/brainstorming/SKILL.md",
+      "localTarget": "assets/skills/brainstorming/SKILL.md",
+      "sourceSha256": "7c7d0818f835872fcbaeffdf8afe8d7096e82547b555d832be6f3058805efc8c",
+      "localSha256": "59e657f75c5e09076a6c4ad4c169aae39b673b69b26c594110cc4a5e66bb9afd",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the upstream asks the user questions first, the adapted skill produces the same shape but persists the answers to the plan bytes for the strong planner."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/dispatching-parallel-agents/SKILL.md",
+      "localTarget": "assets/skills/dispatching-parallel-agents/SKILL.md",
+      "sourceSha256": "5322324c3c02d9944413619fa9e1dc1ce3de46acc9dba1e31896373852de5773",
+      "localSha256": "3b6fe6bda52836c6d3ab83141c00bdbcbe397405129c5c3e45e96c70fa5d164d",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; parallel final review (Standards + Spec) is performed by Ship's two final-review agents dispatched concurrently against the same HEAD."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/executing-plans/SKILL.md",
+      "localTarget": "assets/skills/executing-plans/SKILL.md",
+      "sourceSha256": "651d448e03316cca775daec5b9db6cf62103a4e3ad2b21413147514c3bb33261",
+      "localSha256": "7b30395b12e1ebba57eb156f93802ab002e2ab15161f6e39020aa7eaf7bf3fcb",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; execution is driven by the deterministic Ship controller, not by ad-hoc model turns."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/receiving-code-review/SKILL.md",
+      "localTarget": "assets/skills/receiving-code-review/SKILL.md",
+      "sourceSha256": "92b9a0549336209f75e809545756e9e1e77f42b41184c5b6074c10f31386d724",
+      "localSha256": "72db0c21b241df213d75bcac795b0553c81d939cb9445283bfbd5a6f0f71eed0",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; feedback is recorded in the run event log and only the deterministic controller commits the resulting fix."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/requesting-code-review/SKILL.md",
+      "localTarget": "assets/skills/requesting-code-review/SKILL.md",
+      "sourceSha256": "6a6f74bef8d4bb2932757c9e8e7138f7ad7f00d2d70f17a52cf41dd56a744a15",
+      "localSha256": "815d67fd8d784cd2a5f4ebe504c00da860f13e33dababfbeda0b8f7c7f739d24",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; review requests are submitted through Ship's ship_task_review tool with a single active task brief."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/subagent-driven-development/SKILL.md",
+      "localTarget": "assets/skills/subagent-driven-development/SKILL.md",
+      "sourceSha256": "e613cc72f14b276ee08b60b1861e706081b9c3f362928a6f92ff06ffcedd8d6c",
+      "localSha256": "cf924a955767d9a683b9c9826459c077c82e676be8f7f7c78663fe3aa65d3cbd",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; subagent dispatch is performed through Ship's OpenCode SDK model dispatcher."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/systematic-debugging/SKILL.md",
+      "localTarget": "assets/skills/systematic-debugging/SKILL.md",
+      "sourceSha256": "c7afcba9dc136fca63ab392d5349756600cdcdf30c7ed9e0e606ba62988fa3c5",
+      "localSha256": "de6361b6a30164b358fe311d7f7f43b6933e52490bede7f2777ebbd280b111a4",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; debugging hypotheses are recorded in the run event log so the next session can resume without a chat summary."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/test-driven-development/SKILL.md",
+      "localTarget": "assets/skills/test-driven-development/SKILL.md",
+      "sourceSha256": "04aeb40ac7005583dffc690170df0643eda384ae4ffb5755ad01586c5e184f0a",
+      "localSha256": "d94b1c5c3bfb1f30ad361d90dcb5c8c3bbe31d4223515eef142afdb4cb36b274",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the TDD ordering is enforced by Ship's per-task commit policy (reviewed tests first, then implementation)."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/verification-before-completion/SKILL.md",
+      "localTarget": "assets/skills/verification-before-completion/SKILL.md",
+      "sourceSha256": "3ccb809407618102f0ed3947719cdda022f191301c8b87a9a0ca7b75ecd4770f",
+      "localSha256": "51cef28392dfd7c580b1f4906b3c97e064a52a2a40668939c393e79d43bb0609",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; verification is enforced by Ship's delivery_verify tool, not by the model self-asserting completion."
+    },
+    {
+      "repository": "obra/superpowers",
+      "sourceRef": "44c9b2d6e889982ac18c27d05a19fefe335194e1",
+      "upstreamPath": "skills/writing-plans/SKILL.md",
+      "localTarget": "assets/skills/writing-plans/SKILL.md",
+      "sourceSha256": "bfd7f2980bdd153575fe06b794e849305cfd29655f03abcedeec58436c811ab3",
+      "localSha256": "c4d9362f5aa6c94e87f4844189a80038f46f0768ccb86e7ca3d68e9ae5fc1794",
+      "reuseMode": "adapted",
+      "license": "MIT",
+      "adaptationNote": "Imported verbatim; the plan bytes are the canonical PlanV2 contract validated by Ship's plan schema."
     }
   ]
 }

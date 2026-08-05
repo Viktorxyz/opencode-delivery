@@ -39,6 +39,36 @@ const packageRoot = resolvePackageRoot(import.meta.url);
  * Entries can belong to multiple profiles (e.g., a delivery
  * helper that core and engineering both consume).
  */
+const MATT_SKILLS = [
+  "setup-engineering-workflow",
+  "engineering-workflow",
+  "grilling",
+  "domain-modeling",
+  "grill-with-docs",
+  "triage",
+  "to-spec",
+  "to-tickets",
+  "wayfinder",
+  "handoff",
+  "research",
+  "prototype",
+  "codebase-design",
+  "code-review",
+];
+
+const SUPER_SKILLS = [
+  "brainstorming",
+  "writing-plans",
+  "executing-plans",
+  "subagent-driven-development",
+  "dispatching-parallel-agents",
+  "test-driven-development",
+  "systematic-debugging",
+  "verification-before-completion",
+  "requesting-code-review",
+  "receiving-code-review",
+];
+
 export const CATALOG = [
   {
     id: "plugin:opencode-ship",
@@ -80,22 +110,22 @@ export const CATALOG = [
     mode: 0o644,
     profiles: ["core", "engineering"],
   },
-  {
-    id: "skill:triage",
+  ...MATT_SKILLS.map((name) => ({
+    id: `skill:matt:${name}`,
     kind: "skill",
-    path: ".opencode/skills/triage/SKILL.md",
-    source: resolve(packageRoot, "assets/skills/triage/SKILL.md"),
+    path: `.opencode/skills/${name}/SKILL.md`,
+    source: resolve(packageRoot, `assets/skills/${name}/SKILL.md`),
     mode: 0o644,
     profiles: ["engineering"],
-  },
-  {
-    id: "skill:grill-with-docs",
+  })),
+  ...SUPER_SKILLS.map((name) => ({
+    id: `skill:super:${name}`,
     kind: "skill",
-    path: ".opencode/skills/grill-with-docs/SKILL.md",
-    source: resolve(packageRoot, "assets/skills/grill-with-docs/SKILL.md"),
+    path: `.opencode/skills/${name}/SKILL.md`,
+    source: resolve(packageRoot, `assets/skills/${name}/SKILL.md`),
     mode: 0o644,
     profiles: ["engineering"],
-  },
+  })),
 ];
 
 /**

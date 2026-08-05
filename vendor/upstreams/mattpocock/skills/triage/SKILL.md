@@ -17,12 +17,3 @@ The triage label is written through the typed
 `delivery_issue_labels` tool. The categorisation comment is
 written through the typed `delivery_issue_comment` tool. Never
 use `gh issue edit` or any other raw GitHub command.
-
-## Ship integration
-
-This skill is part of the engineering profile shipped by
-`opencode-ship@1.0`. The strong planner child session is
-configured with `openai/gpt-5.6-sol` and the durable workflow
-state lives under `<git-common-dir>/opencode-ship/`. All
-GitHub mutations go through Ship's typed tools; never use
-`gh api` or raw shell.
