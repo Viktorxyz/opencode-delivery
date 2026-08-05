@@ -203,7 +203,18 @@ export async function planUninstall({ repoRoot, lock }) {
     mode: "uninstall",
     previousRecords: (lock?.manager?.rootDocuments ?? []).flatMap((d) => d.pointers ?? []),
   });
-  if (rootPlan && rootPlan.kind && rootPlan.kind !== "noop" && rootPlan.bytes) {
+  if (rootPlan?.kind === "conflict") {
+    // Surface the root-pointer drift conflict so the uninstall
+    // command fails closed (exit 3) instead of silently overwriting
+    // the consumer's edits.
+    plan.push({
+      op: "root-config",
+      kind: "conflict",
+      target: rootPlan.target,
+      relPath: rootPlan.relPath,
+      reason: rootPlan.reason,
+    });
+  } else if (rootPlan && rootPlan.kind && rootPlan.kind !== "noop" && rootPlan.bytes) {
     plan.push({
       op: "file",
       kind: "update",

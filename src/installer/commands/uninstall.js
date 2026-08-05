@@ -30,15 +30,25 @@ export async function runUninstall(options) {
     return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json);
   }
   const { repoRoot, plan, conflicts, summary } = preview;
+  // Append a transactional config-purge step inside the same plan so
+  // the ship.config.json removal is part of the journaled transaction
+  // (crash-safe, rollback-aware) rather than a post-transaction unlink.
+  if (options.purgeConfig) {
+    const cfg = configPath(repoRoot);
+    plan.push({
+      op: "file",
+      kind: "delete",
+      target: cfg,
+      relPath: ".opencode/ship.config.json",
+      reason: "purge user-owned ship.config.json",
+    });
+  }
   if (conflicts.length > 0) {
     return emitReport(plan, conflicts, summary, options.json, 3, ["modified managed files; refusing to delete"]);
   }
   const tx = await executePlan({ repoRoot, plan, newLockBuilder: null });
   if (!tx.ok) {
     return emitFailure(4, tx.error?.message ?? "transaction failure", options.json);
-  }
-  if (options.purgeConfig) {
-    await unlink(configPath(repoRoot)).catch(() => null);
   }
   return emitReport(plan, [], summary, options.json, 0, [tx.recovered ? "journal recovered before uninstall" : ""].filter(Boolean));
 }

@@ -284,6 +284,40 @@ function planProfileTransitionRoot({ doc, target, relPath, descriptors, previous
   //                         and restore the prior value (or remove
   //                         the pointer entirely if it never existed).
   const desired = descriptors;
+
+  // Fail-closed drift check: every pointer we are about to remove
+  // must still match the `installedSha256` recorded at install time.
+  // If the consumer has modified a managed pointer since the last
+  // write, refuse the transition so the operation does not silently
+  // restore a stale `previous` value on top of the user's edit.
+  const drift = [];
+  for (const rec of previousRecords) {
+    const stillDesired = desired.some((d) => d.pointer === rec.pointer && d.scope === rec.scope);
+    if (stillDesired) continue;
+    if (typeof rec.installedSha256 !== "string" || rec.installedSha256.length === 0) continue;
+    const currentValue = getPointer(doc.value, rec.pointer);
+    if (currentValue === undefined) {
+      // Pointer was removed by the consumer; remove-record path
+      // will not touch the document. Allow the transition.
+      continue;
+    }
+    const currentHash = bytesHashString(stableStringify(currentValue));
+    if (currentHash !== rec.installedSha256) {
+      drift.push({ pointer: rec.pointer, recorded: rec.installedSha256, current: currentHash });
+    }
+  }
+  if (drift.length > 0) {
+    return {
+      kind: "conflict",
+      op: "root-config",
+      target,
+      relPath,
+      reason: `installed pointer drift: ${drift.map((d) => `${d.pointer} (recorded ${d.recorded.slice(0, 8)}…, current ${d.current.slice(0, 8)}…)`).join("; ")}`,
+      edits: drift.map((d) => ({ kind: "conflict", pointer: d.pointer, reason: "installed-pointer-drift" })),
+      pointerRecords: previousRecords,
+    };
+  }
+
   let next = JSON.parse(JSON.stringify(doc.value));
   const edits = [];
   const mergedRecords = previousRecords.map((r) => ({ ...r }));
@@ -436,6 +470,34 @@ function planUninstallRoot({ target, relPath, previousRecords, previousDocument 
       pointerRecords: previousRecords,
     };
   }
+
+  // Fail-closed drift check: refuse to uninstall when an
+  // installer-recorded pointer has been edited by the consumer
+  // since the last install. Silently restoring the original
+  // `previous` value would erase the user's edit, so the whole
+  // transaction must abort and require explicit user intervention.
+  const drift = [];
+  for (const rec of previousRecords) {
+    if (typeof rec.installedSha256 !== "string" || rec.installedSha256.length === 0) continue;
+    const currentValue = getPointer(docResult.value, rec.pointer);
+    if (currentValue === undefined) continue;
+    const currentHash = bytesHashString(stableStringify(currentValue));
+    if (currentHash !== rec.installedSha256) {
+      drift.push({ pointer: rec.pointer, recorded: rec.installedSha256, current: currentHash });
+    }
+  }
+  if (drift.length > 0) {
+    return {
+      kind: "conflict",
+      op: "root-config",
+      target,
+      relPath,
+      reason: `installed pointer drift: ${drift.map((d) => `${d.pointer} (recorded ${d.recorded.slice(0, 8)}…, current ${d.current.slice(0, 8)}…)`).join("; ")}`,
+      edits: drift.map((d) => ({ kind: "conflict", pointer: d.pointer, reason: "installed-pointer-drift" })),
+      pointerRecords: previousRecords,
+    };
+  }
+
   let doc = docResult.value;
   const edits = [];
   for (const rec of previousRecords) {

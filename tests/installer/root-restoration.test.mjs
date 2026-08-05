@@ -208,3 +208,74 @@ test("transition matrix: core -> engineering -> core -> engineering -> uninstall
   const restoredBytes = readFileSync(rootPath, "utf8");
   assert.equal(restoredBytes, originalBytes, "the transition matrix must end at the preinstall bytes");
 });
+
+async function captureStdout(fn) {
+  const chunks = [];
+  const original = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, ...rest) => {
+    chunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+    return original(chunk, ...rest);
+  };
+  try {
+    return { result: await fn(), output: chunks.join("") };
+  } finally {
+    process.stdout.write = original;
+  }
+}
+
+test("profile transition fails closed when an installer pointer has been edited", async (t) => {
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const rootPath = resolve(repoRoot, "opencode.json");
+  await writeFile(rootPath, JSON.stringify({ agent: { build: { permission: { delivery_verify: "deny" } } } }, null, 2) + "\n");
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const init = await captureStdout(() => runInit({ json: true, rootPath: repoRoot, profile: "engineering" }));
+  assert.equal(init.result.exitCode, 0, init.output);
+  // Simulate the user editing the Plan Mode permission block after
+  // install. The recorded `installedSha256` no longer matches the
+  // current value, so the engineering -> core transition must
+  // refuse to silently overwrite the user's edit.
+  const userEdit = JSON.parse(readFileSync(rootPath, "utf8"));
+  userEdit.agent.plan.permission.task = "allow";
+  await writeFile(rootPath, JSON.stringify(userEdit, null, 2) + "\n");
+  const core = await captureStdout(() => runInit({ json: true, rootPath: repoRoot, profile: "core" }));
+  assert.notEqual(core.result.exitCode, 0, `expected drift refusal, got: ${core.output}`);
+  assert.ok(/drift|conflict/i.test(core.output), `expected drift diagnostic, got: ${core.output}`);
+});
+
+test("uninstall fails closed when an installer pointer has been edited", async (t) => {
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const rootPath = resolve(repoRoot, "opencode.json");
+  await writeFile(rootPath, JSON.stringify({ agent: { build: { permission: { delivery_verify: "deny" } } } }, null, 2) + "\n");
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { runUninstall } = await import("../../src/installer/commands/uninstall.js");
+  const init = await captureStdout(() => runInit({ json: true, rootPath: repoRoot, profile: "engineering" }));
+  assert.equal(init.result.exitCode, 0, init.output);
+  // User edits the installer-owned pointer after install.
+  const userEdit = JSON.parse(readFileSync(rootPath, "utf8"));
+  userEdit.agent.build.permission.delivery_verify = "ask";
+  await writeFile(rootPath, JSON.stringify(userEdit, null, 2) + "\n");
+  const unin = await captureStdout(() => runUninstall({ json: true, rootPath: repoRoot }));
+  assert.notEqual(unin.result.exitCode, 0, `expected drift refusal, got: ${unin.output}`);
+  assert.ok(/drift|conflict/i.test(unin.output), `expected drift diagnostic, got: ${unin.output}`);
+  // The lock must NOT have been removed; drift refusal must leave
+  // the install intact so the user can recover manually.
+  assert.equal(existsSync(lockPath(repoRoot)), true, "lock must survive a failed-closed uninstall");
+});
+
+test("uninstall with --purge-config transactionally removes ship.config.json", async (t) => {
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { runUninstall } = await import("../../src/installer/commands/uninstall.js");
+  const { existsSync: e } = await import("node:fs");
+  const init = await runInit({ json: true, rootPath: repoRoot, profile: "core" });
+  assert.equal(init.exitCode, 0, JSON.stringify(init));
+  const cfgPath = resolve(repoRoot, ".opencode", "ship.config.json");
+  assert.equal(e(cfgPath), true, "core init must write ship.config.json");
+  const unin = await runUninstall({ json: true, rootPath: repoRoot, purgeConfig: true });
+  assert.equal(unin.exitCode, 0, JSON.stringify(unin));
+  assert.equal(e(cfgPath), false, "--purge-config must transactionally remove ship.config.json");
+  assert.equal(e(lockPath(repoRoot)), false, "uninstall must also remove the lock");
+});
