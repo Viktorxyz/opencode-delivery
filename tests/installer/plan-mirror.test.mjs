@@ -10,7 +10,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mirrorPlanToIssue, buildPlanCommentBody, PLAN_COMMENT_MARKER } from "../../src/installer/plan-mirror.js";
+import {
+  mirrorPlanToIssue,
+  buildPlanCommentBody,
+  PLAN_COMMENT_MARKER,
+  planMirrorOptions,
+} from "../../src/installer/plan-mirror.js";
 
 const goodPlan = () => ({
   version: 1,
@@ -51,6 +56,16 @@ test("PLAN_COMMENT_MARKER: starts with the stable opencode-ship-execution-handof
   assert.match(PLAN_COMMENT_MARKER, /^opencode-ship-execution-handoff:v\d+/);
 });
 
+test("planMirrorOptions: declares the documented options shape", () => {
+  assert.equal(typeof planMirrorOptions, "object");
+  assert.equal(planMirrorOptions.client, "function");
+  assert.equal(planMirrorOptions.owner, "string");
+  assert.equal(planMirrorOptions.repo, "string");
+  assert.equal(planMirrorOptions.issueNumber, "number");
+  assert.equal(planMirrorOptions.retries, "number");
+  assert.equal(planMirrorOptions.baseBackoffMs, "number");
+});
+
 test("buildPlanCommentBody: contains the plan hash and the stable marker", () => {
   const body = buildPlanCommentBody(goodPlan());
   assert.match(body, new RegExp(PLAN_COMMENT_MARKER));
@@ -61,14 +76,25 @@ test("buildPlanCommentBody: contains the plan hash and the stable marker", () =>
 
 test("mirrorPlanToIssue: posts a single comment with the marker", async () => {
   const client = stubClient();
-  const result = await mirrorPlanToIssue(goodPlan(), { client, owner: "Viktorxyz", repo: "opencode-ship", issueNumber: 21 });
+  const result = await mirrorPlanToIssue(goodPlan(), {
+    client,
+    owner: "Viktorxyz",
+    repo: "opencode-ship",
+    issueNumber: 21,
+  });
   assert.equal(client.calls, 1);
   assert.match(result.url, /example\.com/);
 });
 
 test("mirrorPlanToIssue: retries on transient failure then succeeds", async () => {
   const client = stubClient({ failFirst: 2 });
-  const result = await mirrorPlanToIssue(goodPlan(), { client, owner: "Viktorxyz", repo: "opencode-ship", issueNumber: 21, retries: 3 });
+  const result = await mirrorPlanToIssue(goodPlan(), {
+    client,
+    owner: "Viktorxyz",
+    repo: "opencode-ship",
+    issueNumber: 21,
+    retries: 3,
+  });
   assert.equal(client.calls, 3);
   assert.match(result.url, /example\.com/);
 });
@@ -76,7 +102,27 @@ test("mirrorPlanToIssue: retries on transient failure then succeeds", async () =
 test("mirrorPlanToIssue: gives up after exhausting retries", async () => {
   const client = stubClient({ failFirst: 5 });
   await assert.rejects(
-    () => mirrorPlanToIssue(goodPlan(), { client, owner: "Viktorxyz", repo: "opencode-ship", issueNumber: 21, retries: 2 }),
+    () => mirrorPlanToIssue(goodPlan(), {
+      client,
+      owner: "Viktorxyz",
+      repo: "opencode-ship",
+      issueNumber: 21,
+      retries: 2,
+    }),
     /stub failure/,
+  );
+});
+
+test("mirrorPlanToIssue: rejects extra options not in the documented contract", async () => {
+  const client = stubClient();
+  await assert.rejects(
+    () => mirrorPlanToIssue(goodPlan(), {
+      client,
+      owner: "Viktorxyz",
+      repo: "opencode-ship",
+      issueNumber: 21,
+      unexpected: true,
+    }),
+    /unknown option: unexpected/,
   );
 });

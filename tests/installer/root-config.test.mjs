@@ -78,10 +78,13 @@ test("applyPlanModeOwnership: injects the Plan Mode block under agent.plan.permi
   assert.deepEqual(result.doc.agent?.plan?.permission, planModeBlock());
   // The block is the deny-first shape from plan-mode-permissions.js.
   assert.equal(result.doc.agent.plan.permission.bash, "deny");
+  assert.equal(result.doc.agent.plan.permission.edit["*"], "deny");
   assert.equal(
     result.doc.agent.plan.permission.edit[".git/opencode-ship/plans/**"],
     "allow",
   );
+  assert.equal(result.doc.agent.plan.permission.task, "deny");
+  assert.equal(result.doc.agent.plan.permission.write, undefined);
 });
 
 test("applyPlanModeOwnership: previous value is captured for uninstall restoration", async () => {
@@ -126,10 +129,66 @@ test("end-to-end: init --profile engineering writes the Plan Mode block into the
   const doc = JSON.parse(readFileSync(rootPath, "utf8"));
   assert.ok(doc.agent?.plan?.permission, "Plan Mode block must be injected under agent.plan.permission");
   assert.equal(doc.agent.plan.permission.bash, "deny");
+  assert.equal(doc.agent.plan.permission.edit["*"], "deny");
   assert.equal(
     doc.agent.plan.permission.edit[".git/opencode-ship/plans/**"],
     "allow",
   );
+});
+
+test("end-to-end: engineering init adds Plan Mode permissions to an existing root config", async (t) => {
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+  const { makeProject, cleanProject } = await import("../fixtures/installer-fixture.mjs");
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const rootPath = resolve(repoRoot, "opencode.json");
+  await writeFile(rootPath, JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    username: "fixture-user",
+  }, null, 2) + "\n");
+
+  const r = await runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "engineering",
+  });
+  assert.equal(r.exitCode, 0, r.stderr || r.stdout);
+
+  const doc = JSON.parse(await readFile(rootPath, "utf8"));
+  assert.equal(doc.username, "fixture-user");
+  assert.equal(doc.agent.plan.permission.edit["*"], "deny");
+  assert.equal(doc.agent.plan.permission.edit[".git/opencode-ship/plans/**"], "allow");
+
+  const lock = JSON.parse(await readFile(resolve(repoRoot, ".opencode/ship.lock.json"), "utf8"));
+  const records = (lock.manager?.rootDocuments ?? []).flatMap((entry) => entry.pointers ?? []);
+  assert.ok(records.some((entry) => entry.pointer === "/agent/plan/permission"));
+});
+
+test("end-to-end: engineering init does not overwrite existing Plan Mode permissions", async (t) => {
+  const { runInit } = await import("../../src/installer/commands/init.js");
+  const { readFile, writeFile } = await import("node:fs/promises");
+  const { resolve } = await import("node:path");
+  const { makeProject, cleanProject } = await import("../fixtures/installer-fixture.mjs");
+  const { parent, repoRoot } = await makeProject();
+  t.after(async () => cleanProject(parent));
+  const rootPath = resolve(repoRoot, "opencode.json");
+  const existing = { bash: "ask", edit: { "docs/plans/**": "allow" } };
+  await writeFile(rootPath, JSON.stringify({
+    $schema: "https://opencode.ai/config.json",
+    agent: { plan: { permission: existing } },
+  }, null, 2) + "\n");
+
+  const r = await runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "engineering",
+  });
+  assert.equal(r.exitCode, 3, r.stderr || r.stdout);
+
+  const doc = JSON.parse(await readFile(rootPath, "utf8"));
+  assert.deepEqual(doc.agent.plan.permission, existing);
 });
 
 test("end-to-end: init --profile core does NOT inject the Plan Mode block", async (t) => {

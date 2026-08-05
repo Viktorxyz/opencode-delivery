@@ -271,11 +271,17 @@ export async function planRootConfigApply({ repoRoot, lock, forceRepair, planMod
     };
   }
   const previousPointers = previous?.pointers ?? [];
-  const result = applyOwnedPointers(docResult.value, { allowEqualValues: true });
+  const pointerEntries = planMode
+    ? [...POINTER_ENTRIES, { pointer: planMode.id, strategy: "value", value: planMode.block }]
+    : POINTER_ENTRIES;
+  const result = applyOwnedPointers(docResult.value, {
+    pointerEntries,
+    allowEqualValues: true,
+  });
   if (result.applied.length === 0 && result.skipped.every((s) => s.reason === "already equal")) {
     const ownedPointers = previousPointers.length > 0
       ? previousPointers
-      : POINTER_ENTRIES.map((entry) => {
+      : pointerEntries.map((entry) => {
           const existing = getPointer(docResult.value, entry.pointer);
           return {
             pointer: entry.pointer,

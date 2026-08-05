@@ -9,10 +9,12 @@
  * the relative path:
  *
  *   {
- *     "bash":  "deny",
- *     "edit":  { ".git/opencode-ship/plans/**": "allow" },
- *     "write": { ".git/opencode-ship/plans/**": "allow" },
- *     ...
+ *     "bash": "deny",
+ *     "edit": {
+ *       "*": "deny",
+ *       ".git/opencode-ship/plans/**": "allow"
+ *     },
+ *     "task": "deny"
  *   }
  *
  * opencode.js evaluates the LAST matching rule, so the broad
@@ -20,7 +22,7 @@
  * `.git/opencode-ship/plans/**` is the only exception. The
  * generator returns the block in this exact shape so a
  * consumer's `opencode.json` can include it under
- * `agent.build.permission`.
+ * `agent.plan.permission`.
  *
  * The renderPlanModeBlock helper emits a JSON-encoded string
  * suitable for direct injection into a consumer's config file.
@@ -39,21 +41,22 @@ const PLANS_GLOB = `${PLAN_PATH_PREFIX}/**`;
 export function planModePermissions() {
   return {
     build: {
-      // Broad-deny entries for the standard Build verbs. These
-      // cover bash, source edits, and writes outside the plans
-      // path. opencode.js evaluates the last matching rule, so
-      // a narrow object-typed entry after a string-typed deny
-      // creates a per-path exception.
       bash: DENY_DEFAULT,
-      edit: { [PLANS_GLOB]: ALLOW_PLANS },
-      write: { [PLANS_GLOB]: ALLOW_PLANS },
+      edit: {
+        "*": DENY_DEFAULT,
+        [PLANS_GLOB]: ALLOW_PLANS,
+      },
       webfetch: DENY_DEFAULT,
-      // The Plan Mode sub-agent also has no business calling
-      // delivery tools itself; that is the Build controller's
-      // job. Keep the canonical nine tools as deny so a Plan
-      // Mode prompt injection cannot trigger them.
-      "task.plan-agent": DENY_DEFAULT,
-      "task.build-agent": DENY_DEFAULT,
+      task: DENY_DEFAULT,
+      delivery_inspect: DENY_DEFAULT,
+      delivery_issue: DENY_DEFAULT,
+      delivery_worktree: DENY_DEFAULT,
+      delivery_verify: DENY_DEFAULT,
+      delivery_review: DENY_DEFAULT,
+      delivery_pr: DENY_DEFAULT,
+      delivery_ready: DENY_DEFAULT,
+      delivery_merge: DENY_DEFAULT,
+      delivery_cleanup: DENY_DEFAULT,
     },
   };
 }

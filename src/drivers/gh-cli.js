@@ -16,6 +16,24 @@
 import { spawn } from "node:child_process";
 import { parseRepoSlug } from "./github.js";
 
+/**
+ * Typed surface of the production GitHub driver. Exposed here so
+ * downstream modules can JSDoc-import the driver shape without
+ * circular imports.
+ *
+ * @typedef {{
+ *   ensureIssue: (input: { repo: string; title: string; body: string; labels?: string[] }) => Promise<any>,
+ *   openDraftPullRequest: (input: { repo: string; head: string; base: string; title: string; body: string; issueNumber: number }) => Promise<any>,
+ *   updatePullRequestBody: (input: { repo: string; number: number; body: string }) => Promise<any>,
+ *   markReady: (input: { repo: string; number: number }) => Promise<any>,
+ *   mergePullRequest: (input: { repo: string; number: number; subject: string }) => Promise<any>,
+ *   readPullRequest: (input: { repo: string; number: number }) => Promise<any>,
+ *   readChecks: (input: { repo: string; sha?: string; number?: number; branch?: string; required?: string[] }) => Promise<any[]>,
+ *   comment: (input: { repo: string; number: number; body: string }) => Promise<any>,
+ *   refreshHead: (input: { repo: string; number: number }) => Promise<any>,
+ * }} GhDriver
+ */
+
 function defaultRunner(cwd, env) {
   return (args) =>
     new Promise((resolve, reject) => {

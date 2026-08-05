@@ -2,6 +2,13 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 0.9.1 — Restore a truthful green baseline
+
+- `src/installer/plan-mirror.js` documents its options through a JSDoc typedef and rejects unknown options.
+- `mirrorPlanToIssue` now defaults to the typed `ghDriverClient`, which wraps `createGhDriver().comment()`. The runtime no longer shells out to `gh api`.
+- `previewUninstall` is now called with its supported signature; `runUninstall` no longer passes a `profile` argument.
+- `README.md` and `CHANGELOG.md` no longer claim the M3 task loop, parallel Standards/Spec Ready gate, or vendored Matt/Superpowers workflows are end-to-end shipped; those contracts remain source-only modules.
+
 ## 0.9.0 — Complete engineering profile publish
 
 `opencode-ship@0.9.0` ships the transition matrix smoke required by issue #24 (Task 10 in approved plan). The smoke covers the core↔engineering transition shape — core omits engineering-only files, engineering installs them, and the lock's `manager.profile` field tracks the active profile across upgrades. The full E2E install (`pnpm dlx opencode-ship@latest`) continues to be exercised by the existing installer-cli tests; the new module focuses on the local-dev file set so the smoke runs in the default `npm run verify` pipeline.
