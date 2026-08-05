@@ -19,15 +19,20 @@ Commands:
   --help      Show this usage and exit.
 
 Options:
-  --root <path>          Project root (defaults to cwd).
-  --profile <name>       Override active profile: ${PROFILES.join(", ")}.
-  --force-config         Rewrite the user config from detection (init only).
-  --force-root-config    Create opencode.json when absent (init only).
-  --strict-doctor        Fail init when doctor reports unhealthy checks.
-  --replace-managed      Replace locally-modified managed files (update only).
-  --purge-config         Remove ship.config.json when uninstalling.
-  --json                 Emit a JSON envelope instead of human output.
+  --root <path>               Project root (defaults to cwd).
+  --profile <name>            Override active profile: ${PROFILES.join(", ")}.
+  --force-config              Rewrite the user config from detection (init only).
+  --force-root-config         Create opencode.json when absent (init only).
+  --strict-doctor             Fail init when doctor reports unhealthy checks.
+  --replace-managed           Replace locally-modified managed files (update only).
+  --purge-config              Remove ship.config.json when uninstalling.
+  --planner-model <id>        Engineering model id for the strong planner.
+  --builder-model <id>        Engineering model id for the cheap builder.
+  --final-reviewer-model <id> Engineering model id for the Standards + Spec reviewer.
+  --json                      Emit a JSON envelope instead of human output.
 `;
+
+const MODEL_ID_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
 export function parseFlags(argv) {
   const options = {
@@ -39,6 +44,9 @@ export function parseFlags(argv) {
     forceConfig: false,
     forceRootConfig: false,
     strictDoctor: false,
+    plannerModel: null,
+    builderModel: null,
+    finalReviewerModel: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -58,6 +66,15 @@ export function parseFlags(argv) {
         return { error: `unknown profile '${value}' (expected one of: ${PROFILES.join(", ")})` };
       }
       options.profile = value;
+    } else if (arg === "--planner-model" || arg === "--builder-model" || arg === "--final-reviewer-model") {
+      const value = argv[++i];
+      if (value === undefined) return { error: `${arg} requires a value` };
+      if (!MODEL_ID_RE.test(value)) {
+        return { error: `${arg} must be a "<provider>/<model>" id, got ${JSON.stringify(value)}` };
+      }
+      if (arg === "--planner-model") options.plannerModel = value;
+      else if (arg === "--builder-model") options.builderModel = value;
+      else options.finalReviewerModel = value;
     } else if (arg === "-h" || arg === "--help") return { help: true };
     else if (arg === "-v" || arg === "--version") return { version: true };
     else return { error: `unknown flag ${arg}` };

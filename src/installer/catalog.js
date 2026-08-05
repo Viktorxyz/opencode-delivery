@@ -69,6 +69,21 @@ const SUPER_SKILLS = [
   "receiving-code-review",
 ];
 
+const ENGINEERING_AGENTS = [
+  "ship-controller",
+  "ship-planner",
+  "ship-task-builder",
+  "ship-task-reviewer",
+  "ship-final-standards-reviewer",
+  "ship-final-spec-reviewer",
+];
+
+const ENGINEERING_COMMANDS = [
+  "ship-deliver",
+  "ship-resume",
+  "ship-status",
+];
+
 export const CATALOG = [
   {
     id: "plugin:opencode-ship",
@@ -94,6 +109,22 @@ export const CATALOG = [
     mode: 0o644,
     profiles: ["core", "engineering"],
   },
+  ...ENGINEERING_AGENTS.map((name) => ({
+    id: `agent:${name}`,
+    kind: "agent",
+    path: `.opencode/agents/${name}.md`,
+    source: resolve(packageRoot, `assets/agents/${name}.md`),
+    mode: 0o644,
+    profiles: ["engineering"],
+  })),
+  ...ENGINEERING_COMMANDS.map((name) => ({
+    id: `command:${name}`,
+    kind: "support",
+    path: `.opencode/commands/${name}.md`,
+    source: resolve(packageRoot, `assets/commands/${name}.md`),
+    mode: 0o644,
+    profiles: ["engineering"],
+  })),
   {
     id: "skill:delivery-workflow",
     kind: "skill",
