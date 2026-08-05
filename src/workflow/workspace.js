@@ -90,7 +90,7 @@ export async function captureWorkspaceManifest(repoRoot) {
         entry.sha256 = sha256(buf);
       }
     }
-    entries.push(entry);
+    entries.push(/** @type {WorkspaceEntry} */ (entry));
   }
   entries.sort((a, b) => a.path < b.path ? -1 : a.path === b.path ? 0 : 1);
   return { repoRoot, headSha, entries, hash: hashEntries(entries) };

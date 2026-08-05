@@ -79,6 +79,7 @@ export function renderCompactionBlock(block) {
     `last-event=${block.lastEventSeq}:${block.lastEventHash}`,
     `resume=${block.resumeCommand}`,
   ];
+  void lines;
   const text = lines.join("\n") + "\n";
   if (Buffer.byteLength(text, "utf8") > MAX_BYTES) {
     throw new Error(`compaction block exceeds ${MAX_BYTES} bytes (${Buffer.byteLength(text, "utf8")})`);
@@ -95,6 +96,7 @@ export function parseCompactionBlock(text) {
   if (lines[0] !== `opencode-ship-resume:${SCHEMA}`) {
     throw new Error(`parseCompactionBlock: unexpected header: ${lines[0]}`);
   }
+  /** @type {Partial<CompactionBlock>} */
   const out = {};
   for (const line of lines.slice(1)) {
     if (line.length === 0) continue;

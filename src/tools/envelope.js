@@ -79,6 +79,8 @@ export function failure(kind, message, options = {}) {
   if (typeof message !== "string" || message.length === 0) {
     throw new Error("envelope.failure: message must be a non-empty string");
   }
+  /** @type {any} */
+  const details = options.details ?? {};
   return {
     contractVersion: CONTRACT_VERSION,
     ok: false,
@@ -86,7 +88,7 @@ export function failure(kind, message, options = {}) {
     operationId: options.operationId ?? operationId(`${kind}-err`),
     retryable: options.retryable === true,
     message,
-    details: options.details ?? {},
+    details,
   };
 }
 
@@ -101,10 +103,11 @@ export function failure(kind, message, options = {}) {
  */
 export function isSuccess(value, expectedKind) {
   if (!value || typeof value !== "object") return false;
-  if (value.contractVersion !== CONTRACT_VERSION) return false;
-  if (value.ok !== true) return false;
-  if (typeof value.kind !== "string") return false;
-  if (expectedKind && value.kind !== expectedKind) return false;
+  const v = /** @type {any} */ (value);
+  if (v.contractVersion !== CONTRACT_VERSION) return false;
+  if (v.ok !== true) return false;
+  if (typeof v.kind !== "string") return false;
+  if (expectedKind && v.kind !== expectedKind) return false;
   return true;
 }
 
@@ -116,9 +119,10 @@ export function isSuccess(value, expectedKind) {
  */
 export function isFailure(value) {
   if (!value || typeof value !== "object") return false;
-  if (value.contractVersion !== CONTRACT_VERSION) return false;
-  if (value.ok !== false) return false;
-  if (typeof value.kind !== "string") return false;
-  if (typeof value.message !== "string") return false;
-  return typeof value.operationId === "string";
+  const v = /** @type {any} */ (value);
+  if (v.contractVersion !== CONTRACT_VERSION) return false;
+  if (v.ok !== false) return false;
+  if (typeof v.kind !== "string") return false;
+  if (typeof v.message !== "string") return false;
+  return typeof v.operationId === "string";
 }

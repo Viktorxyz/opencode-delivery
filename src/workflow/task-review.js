@@ -58,50 +58,52 @@ export function validateTaskReviewVerdict(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, kind: "shape", issues: ["verdict root must be an object"] };
   }
-  if (typeof raw.planHash !== "string" || !/^[0-9a-f]{64}$/.test(raw.planHash)) {
+  const v = /** @type {any} */ (raw);
+  if (typeof v.planHash !== "string" || !/^[0-9a-f]{64}$/.test(v.planHash)) {
     issues.push("planHash must be a 64-char hex string");
   }
-  if (typeof raw.taskId !== "string" || raw.taskId.length === 0) {
+  if (typeof v.taskId !== "string" || v.taskId.length === 0) {
     issues.push("taskId must be a non-empty string");
   }
-  if (typeof raw.round !== "number" || !Number.isInteger(raw.round) || raw.round < 1) {
+  if (typeof v.round !== "number" || !Number.isInteger(v.round) || v.round < 1) {
     issues.push("round must be a positive integer");
   }
-  if (typeof raw.workspaceHash !== "string" || !/^[0-9a-f]{64}$/.test(raw.workspaceHash)) {
+  if (typeof v.workspaceHash !== "string" || !/^[0-9a-f]{64}$/.test(v.workspaceHash)) {
     issues.push("workspaceHash must be a 64-char hex string");
   }
-  if (raw.verdict !== "pass" && raw.verdict !== "fail") {
+  if (v.verdict !== "pass" && v.verdict !== "fail") {
     issues.push("verdict must be 'pass' or 'fail'");
   }
-  if (!Array.isArray(raw.findings)) {
+  if (!Array.isArray(v.findings)) {
     issues.push("findings must be an array");
   } else {
-    for (const f of raw.findings) {
+    for (const f of v.findings) {
       if (!f || typeof f !== "object") {
         issues.push("finding must be an object");
         continue;
       }
-      if (!["spec", "quality"].includes(f.axis)) {
-        issues.push(`finding.axis must be spec|quality, got ${JSON.stringify(f.axis)}`);
+      const finding = /** @type {any} */ (f);
+      if (!["spec", "quality"].includes(finding.axis)) {
+        issues.push(`finding.axis must be spec|quality, got ${JSON.stringify(finding.axis)}`);
       }
-      if (!["info", "warning", "blocking"].includes(f.severity)) {
-        issues.push(`finding.severity must be info|warning|blocking, got ${JSON.stringify(f.severity)}`);
+      if (!["info", "warning", "blocking"].includes(finding.severity)) {
+        issues.push(`finding.severity must be info|warning|blocking, got ${JSON.stringify(finding.severity)}`);
       }
-      if (typeof f.message !== "string" || f.message.length === 0) {
+      if (typeof finding.message !== "string" || finding.message.length === 0) {
         issues.push("finding.message must be a non-empty string");
       }
-      if (f.severity === "blocking" && raw.verdict === "pass") {
+      if (finding.severity === "blocking" && v.verdict === "pass") {
         issues.push("verdict=pass with a blocking finding is forbidden");
       }
     }
   }
-  if (typeof raw.reviewerSessionID !== "string" || raw.reviewerSessionID.length === 0) {
+  if (typeof v.reviewerSessionID !== "string" || v.reviewerSessionID.length === 0) {
     issues.push("reviewerSessionID must be a non-empty string");
   }
-  if (typeof raw.reviewerModel !== "string" || !REVIEWER_MODEL_RE.test(raw.reviewerModel)) {
+  if (typeof v.reviewerModel !== "string" || !REVIEWER_MODEL_RE.test(v.reviewerModel)) {
     issues.push("reviewerModel must be a <provider>/<model> id");
   }
-  if (typeof raw.reviewedAt !== "string" || raw.reviewedAt.length === 0) {
+  if (typeof v.reviewedAt !== "string" || v.reviewedAt.length === 0) {
     issues.push("reviewedAt must be an ISO timestamp");
   }
   return { ok: issues.length === 0, kind: issues.length === 0 ? "ok" : "shape", issues };

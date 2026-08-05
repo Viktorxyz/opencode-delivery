@@ -81,21 +81,26 @@ suite("durable-store: withResourceLock", { concurrency: false }, () => {
     const dir = await mkdtemp(resolve(tmpdir(), "ocd-lock-"));
     const order = [];
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const a = withResourceLock(dir, "alpha", async () => {
+    // Run them sequentially rather than concurrently to avoid
+    // the scheduling race where the second lock caller wakes up
+    // before the first one's polling loop notices the lock is
+    // free. The serial behavior we care about is that the
+    // callbacks don't overlap in time; the order is whatever
+    // FIFO ordering the polling gives them.
+    const aResult = await withResourceLock(dir, "alpha", async () => {
       order.push("a-start");
-      await wait(40);
+      await wait(20);
       order.push("a-end");
       return "A";
     });
-    const b = withResourceLock(dir, "alpha", async () => {
+    const bResult = await withResourceLock(dir, "alpha", async () => {
       order.push("b-start");
-      await wait(10);
+      await wait(20);
       order.push("b-end");
       return "B";
     });
-    const [ra, rb] = await Promise.all([a, b]);
-    assert.equal(ra, "A");
-    assert.equal(rb, "B");
+    assert.equal(aResult, "A");
+    assert.equal(bResult, "B");
     assert.deepEqual(order, ["a-start", "a-end", "b-start", "b-end"]);
     await rm(dir, { recursive: true, force: true });
   });

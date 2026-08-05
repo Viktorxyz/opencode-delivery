@@ -76,62 +76,63 @@ export function validatePlanV2(raw) {
   if (!isPlainObject(raw)) {
     return { ok: false, kind: "shape", issues: ["plan root must be an object"] };
   }
-  if (raw.schemaVersion !== 2) {
-    issues.push(`unsupported schemaVersion: ${JSON.stringify(raw.schemaVersion)} (expected 2)`);
+  const plan = /** @type {any} */ (raw);
+  if (plan.schemaVersion !== 2) {
+    issues.push(`unsupported schemaVersion: ${JSON.stringify(plan.schemaVersion)} (expected 2)`);
   }
-  expectString(raw, "workflowId", issues);
-  if (typeof raw.revision !== "number" || !Number.isInteger(raw.revision) || raw.revision < 1) {
+  expectString(plan, "workflowId", issues);
+  if (typeof plan.revision !== "number" || !Number.isInteger(plan.revision) || plan.revision < 1) {
     issues.push("revision must be a positive integer");
   }
-  if (raw.supersedes !== null && raw.supersedes !== undefined) {
-    if (!isPlainObject(raw.supersedes)) {
+  if (plan.supersedes !== null && plan.supersedes !== undefined) {
+    if (!isPlainObject(plan.supersedes)) {
       issues.push("supersedes must be null or an object");
     } else {
-      expectString(raw.supersedes, "revision", issues);
-      expectString(raw.supersedes, "sha256", issues);
+      expectString(plan.supersedes, "revision", issues);
+      expectString(plan.supersedes, "sha256", issues);
     }
   }
-  if (!isPlainObject(raw.authoredBy)) {
+  if (!isPlainObject(plan.authoredBy)) {
     issues.push("authoredBy must be an object");
   } else {
-    expectString(raw.authoredBy, "sessionID", issues);
-    const model = raw.authoredBy.model;
+    expectString(plan.authoredBy, "sessionID", issues);
+    const model = plan.authoredBy.model;
     if (typeof model !== "string" || !/^[^/]+\/[^/]+$/.test(model)) {
       issues.push("authoredBy.model must be a <provider>/<model> id");
     }
-    expectString(raw.authoredBy, "createdAt", issues);
+    expectString(plan.authoredBy, "createdAt", issues);
   }
-  if (!isPlainObject(raw.source)) {
+  if (!isPlainObject(plan.source)) {
     issues.push("source must be an object");
   } else {
-    expectString(raw.source, "repository", issues);
-    if (typeof raw.source.issueNumber !== "number" || !Number.isInteger(raw.source.issueNumber) || raw.source.issueNumber < 1) {
+    expectString(plan.source, "repository", issues);
+    if (typeof plan.source.issueNumber !== "number" || !Number.isInteger(plan.source.issueNumber) || plan.source.issueNumber < 1) {
       issues.push("source.issueNumber must be a positive integer");
     }
-    expectString(raw.source, "issueUrl", issues);
-    expectString(raw.source, "baseBranch", issues);
-    if (typeof raw.source.baseSha !== "string" || !/^[0-9a-f]{40}$/.test(raw.source.baseSha)) {
+    expectString(plan.source, "issueUrl", issues);
+    expectString(plan.source, "baseBranch", issues);
+    if (typeof plan.source.baseSha !== "string" || !/^[0-9a-f]{40}$/.test(plan.source.baseSha)) {
       issues.push("source.baseSha must be a 40-char commit SHA");
     }
   }
-  if (typeof raw.goal !== "string" || raw.goal.length < 8) {
+  if (typeof plan.goal !== "string" || plan.goal.length < 8) {
     issues.push("goal must be a non-trivial string");
   }
-  if (!isPlainObject(raw.architecture)) {
+  if (!isPlainObject(plan.architecture)) {
     issues.push("architecture must be an object");
   } else {
-    expectString(raw.architecture, "summary", issues);
-    if (!Array.isArray(raw.architecture.decisions)) {
+    expectString(plan.architecture, "summary", issues);
+    if (!Array.isArray(plan.architecture.decisions)) {
       issues.push("architecture.decisions must be an array");
     }
   }
-  if (!Array.isArray(raw.constraints)) {
+  if (!Array.isArray(plan.constraints)) {
     issues.push("constraints must be an array");
   }
-  if (!Array.isArray(raw.files)) {
+  if (!Array.isArray(plan.files)) {
     issues.push("files must be an array");
   } else {
-    for (const f of raw.files) {
+    for (const f of plan.files) {
       if (!isPlainObject(f)) {
         issues.push("file entry is not an object");
         continue;
@@ -144,18 +145,18 @@ export function validatePlanV2(raw) {
       }
     }
   }
-  if (!Array.isArray(raw.tasks)) {
+  if (!Array.isArray(plan.tasks)) {
     issues.push("tasks must be an array");
-    return finalize(raw, issues);
+    return finalize(plan, issues);
   }
-  if (raw.tasks.length === 0) {
+  if (plan.tasks.length === 0) {
     issues.push("tasks must contain at least one task");
   }
   const seenIds = new Set();
-  for (const t of raw.tasks) {
-    validateTask(t, issues, seenIds, raw);
+  for (const t of plan.tasks) {
+    validateTask(t, issues, seenIds, plan);
   }
-  return finalize(raw, issues);
+  return finalize(plan, issues);
 }
 
 function finalize(raw, issues) {

@@ -85,7 +85,7 @@ export function validateGhArgv(argv) {
       return { ok: false, reason: "gh argv must contain only non-empty strings" };
     }
   }
-  return { ok: true, verb };
+  return { ok: true, verb: /** @type {any} */ (verb) };
 }
 
 /**

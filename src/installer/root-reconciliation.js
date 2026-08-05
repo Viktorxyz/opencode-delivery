@@ -52,8 +52,7 @@ export const PLAN_MODE_POINTER = "/agent/plan/permission";
  * @property {string} pointer
  * @property {"value" | "object-entry" | "array-member"} strategy
  * @property {Profile} scope
- * @property {unknown} [value] Desired value (for value strategy).
- * @property {object} [block] Desired block (for object strategy).
+ * @property {any} [value] Desired value (for value strategy).
  */
 
 /**
@@ -74,16 +73,16 @@ export const PLAN_MODE_POINTER = "/agent/plan/permission";
 export function desiredPointersForProfile(profile) {
   const out = POINTER_ENTRIES.map((entry) => ({
     pointer: entry.pointer,
-    strategy: entry.strategy,
-    scope: "core",
+    strategy: /** @type {"value" | "object-entry" | "array-member"} */ (entry.strategy),
+    scope: /** @type {Profile} */ ("core"),
     value: entry.value,
   }));
   if (profile === "engineering") {
     out.push({
       pointer: PLAN_MODE_POINTER,
-      strategy: "value",
-      scope: "engineering",
-      value: planModePermissions().build,
+      strategy: /** @type {"value" | "object-entry" | "array-member"} */ ("value"),
+      scope: /** @type {Profile} */ ("engineering"),
+      value: /** @type {any} */ (planModePermissions().build),
     });
   }
   return out;
@@ -166,7 +165,7 @@ export async function planRootReconciliation(input) {
   if (fileMissing && input.forceRepair) {
     doc = synthesizeDefaultRootConfig();
     if (mode === "install" && profile === "engineering") {
-      const applied = applyPlanModeOwnership(doc);
+      const applied = applyPlanModeOwnership(doc, { block: planModePermissions().build });
       doc = applied.doc;
     }
     const bytes = Buffer.from(formatRootConfig(doc), "utf8");
@@ -517,7 +516,7 @@ function seedPointerRecords(descriptors, previousRecords) {
     if (seen.has(d.pointer)) continue;
     out.push({
       pointer: d.pointer,
-      strategy: d.strategy,
+      strategy: /** @type {any} */ (d.strategy),
       scope: d.scope,
       installedSha256: d.value !== undefined ? bytesHashString(stableStringify(d.value)) : null,
       previous: { existed: false },
