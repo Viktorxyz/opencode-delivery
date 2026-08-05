@@ -67,12 +67,12 @@ test("init: ship.config.json .profile=core wins over a v0.3 lock without profile
   await writeFileTo(
     repoRoot,
     ".opencode/ship.config.json",
-    JSON.stringify({ schemaVersion: 1, profile: "engineering" }, null, 2) + "\n",
+    JSON.stringify({ schemaVersion: 1, profile: "core" }, null, 2) + "\n",
   );
   const r = await initWith(repoRoot);
   assert.equal(r.code, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
-  assert.equal(lock.manager.profile, "engineering");
+  assert.equal(lock.manager.profile, "core");
 });
 
 test("init: ship.config.json .profile=engineering with no CLI flag persists the choice", async (t) => {

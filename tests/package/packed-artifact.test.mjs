@@ -81,14 +81,29 @@ test("packed-artifact: bundled plugin loads with nine tools in an isolated consu
   const ids = JSON.parse(childProc.stdout.trim());
   assert.deepEqual(ids, [
     "delivery_cleanup",
+    "delivery_github_read",
     "delivery_inspect",
     "delivery_issue",
+    "delivery_issue_close",
+    "delivery_issue_comment",
+    "delivery_issue_labels",
+    "delivery_issue_link",
     "delivery_merge",
     "delivery_pr",
+    "delivery_publish",
     "delivery_ready",
     "delivery_review",
+    "delivery_sync",
     "delivery_verify",
     "delivery_worktree",
+    "ship_plan_approve",
+    "ship_plan_start",
+    "ship_plan_submit",
+    "ship_resume",
+    "ship_run_start",
+    "ship_status",
+    "ship_task_report",
+    "ship_task_review",
   ]);
   // Cleanup tarball
   await rm(tarballPath, { force: true }).catch(() => null);

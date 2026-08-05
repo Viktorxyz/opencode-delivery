@@ -319,3 +319,11 @@ function sha256(text) {
 }
 
 export const SUPPORTED_SCHEMA_VERSION = 2;
+
+export function canonicalize(value) {
+  return canonicalJson(value);
+}
+
+export function hashPayload(value) {
+  return computePlanHash(value);
+}
