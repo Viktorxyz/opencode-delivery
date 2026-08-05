@@ -87,7 +87,7 @@ export async function publishPlanRevision(repoRoot, plan) {
  * revision to a decision and a session.
  *
  * @param {string} repoRoot
- * @param {{ workflowId: string, revision: number, decision: 'approved', sessionID: string, approvedBy: string, approvedAt: string, chunkIds: string[], chunkHashes: string[], baseSha: string, models: { planner: string, builder: string, finalReviewer: string } }} approval
+ * @param {{ workflowId: string, revision: number, decision: 'approved', sessionID: string, approvedBy: string, approvedAt: string, chunkIds: string[], chunkHashes: string[], baseSha: string, models: { planner: string, builder: string, finalReviewer: string }, sha256: string }} approval
  * @returns {Promise<{ recorded: boolean, path: string }>}
  */
 export async function publishApproval(repoRoot, approval) {

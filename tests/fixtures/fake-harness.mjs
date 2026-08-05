@@ -58,7 +58,7 @@ export function createFakeGhDriver(state) {
       }
       const verb = argv.slice(1, 3).join(" ");
       if (verb.includes("api")) {
-        throw new Error(`fake-gh: gh api is forbidden`);
+        throw new Error(`fake-gh: typed verb is forbidden`);
       }
       if (!ALLOWED_GH_VERBS.has(verb)) {
         throw new Error(`fake-gh: verb not allowed: ${verb}`);

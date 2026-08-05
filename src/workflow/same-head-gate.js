@@ -21,16 +21,41 @@
 import { createHash } from "node:crypto";
 
 /**
- * @typedef {Object} GateEvidence
+ * @typedef {Object} StandardsEvidence
+ * @property {string} headSha
+ * @property {string} packageHash
+ * @property {"pass" | "fail"} verdict
+ * @property {string} [reviewerSessionID]
+ * @property {string} [reviewerModel]
+ */
+
+/**
+ * @typedef {Object} SpecEvidence
+ * @property {string} headSha
+ * @property {string} packageHash
+ * @property {"pass" | "fail"} verdict
+ * @property {string} [reviewerSessionID]
+ * @property {string} [reviewerModel]
+ */
+
+/**
+ * @typedef {Object} VerificationEvidence
+ * @property {string} headSha
+ * @property {number} exitCode
+ * @property {string} [hash]
+ */
+
+/**
+ * @typedef {Object} CiEvidence
+ * @property {string} headSha
+ * @property {"pass" | "failure" | "pending"} state
+ * @property {string} [hash]
+ */
+
+/**
+ * @typedef {Object} PrEvidence
  * @property {string} headSha
  * @property {string} prHeadSha
- * @property {string} [mergeBaseSha]
- * @property {string} [packageHash]
- * @property {string} [verificationHash]
- * @property {string} [ciHash]
- * @property {string} [standardsReviewHash]
- * @property {string} [specReviewHash]
- * @property {string} [source]
  */
 
 function isSha(hex) {
@@ -47,11 +72,11 @@ function refute(reason) {
  * the controller calls this once before requesting a Ready.
  *
  * @param {{
- *   standards: GateEvidence,
- *   spec: GateEvidence,
- *   verification: GateEvidence,
- *   ci: GateEvidence,
- *   pr: GateEvidence,
+ *   standards: StandardsEvidence,
+ *   spec: SpecEvidence,
+ *   verification: VerificationEvidence,
+ *   ci: CiEvidence,
+ *   pr: PrEvidence,
  * }} input
  * @returns {{ ok: boolean, reason?: string, headSha?: string }}
  */
@@ -76,11 +101,11 @@ export function checkSameHeadGate(input) {
   if (input.standards.verdict !== "pass" || input.spec.verdict !== "pass") {
     return refute(`verdict: standards=${input.standards.verdict} spec=${input.spec.verdict}`);
   }
-  if (input.verification.exitCode !== 0) {
-    return refute(`verification: exit=${input.verification.exitCode}`);
+  if ((/** @type {any} */ (input.verification)).exitCode !== 0) {
+    return refute(`verification: exit=${(/** @type {any} */ (input.verification)).exitCode}`);
   }
-  if (input.ci.state !== "pass") {
-    return refute(`ci: state=${input.ci.state}`);
+  if ((/** @type {any} */ (input.ci)).state !== "pass") {
+    return refute(`ci: state=${(/** @type {any} */ (input.ci)).state}`);
   }
   if (input.pr.headSha !== input.pr.prHeadSha) {
     return refute(`pr-head-drift: gate=${input.pr.headSha} current=${input.pr.prHeadSha}`);
@@ -96,13 +121,13 @@ export function checkSameHeadGate(input) {
  * each axis; tests use a stub dispatcher.
  *
  * @param {{
- *   runGate: () => Promise<GateEvidence>,
- *   specGate: () => Promise<GateEvidence>,
- *   verificationGate: () => Promise<GateEvidence>,
- *   ciGate: () => Promise<GateEvidence>,
- *   prGate: () => Promise<GateEvidence>,
+ *   runGate: () => Promise<StandardsEvidence>,
+ *   specGate: () => Promise<SpecEvidence>,
+ *   verificationGate: () => Promise<VerificationEvidence>,
+ *   ciGate: () => Promise<CiEvidence>,
+ *   prGate: () => Promise<PrEvidence>,
  * }} input
- * @returns {Promise<{ ok: boolean, reason?: string, headSha?: string, evidence: { standards: GateEvidence, spec: GateEvidence, verification: GateEvidence, ci: GateEvidence, pr: GateEvidence } }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, headSha?: string, evidence: { standards: StandardsEvidence, spec: SpecEvidence, verification: VerificationEvidence, ci: CiEvidence, pr: PrEvidence } }>}
  */
 export async function runSameHeadGate(input) {
   const [standards, spec, verification, ci, pr] = await Promise.all([
@@ -121,16 +146,16 @@ export async function runSameHeadGate(input) {
  * hash binds the gate to the canonical evidence so a later
  * HEAD change invalidates the gate.
  *
- * @param {{ standards: GateEvidence, spec: GateEvidence, verification: GateEvidence, ci: GateEvidence, pr: GateEvidence }} evidence
+ * @param {{ standards: StandardsEvidence, spec: SpecEvidence, verification: VerificationEvidence, ci: CiEvidence, pr: PrEvidence }} evidence
  * @returns {string}
  */
 export function hashSameHeadEvidence(evidence) {
   const partSort = (obj) => Object.keys(obj).sort().reduce((acc, k) => ({ ...acc, [k]: obj[k] }), {});
   const payload = {
-    standards: partSort({ headSha: evidence.standards.headSha, packageHash: evidence.standards.packageHash, verdict: evidence.standards.verdict }),
-    spec: partSort({ headSha: evidence.spec.headSha, packageHash: evidence.spec.packageHash, verdict: evidence.spec.verdict }),
-    verification: partSort({ headSha: evidence.verification.headSha, exitCode: evidence.verification.exitCode, hash: evidence.verification.hash }),
-    ci: partSort({ headSha: evidence.ci.headSha, state: evidence.ci.state, hash: evidence.ci.hash }),
+    standards: partSort({ headSha: evidence.standards.headSha, packageHash: evidence.standards.packageHash, verdict: (/** @type {any} */ (evidence.standards)).verdict }),
+    spec: partSort({ headSha: evidence.spec.headSha, packageHash: evidence.spec.packageHash, verdict: (/** @type {any} */ (evidence.spec)).verdict }),
+    verification: partSort({ headSha: (/** @type {any} */ (evidence.verification)).headSha, exitCode: (/** @type {any} */ (evidence.verification)).exitCode, hash: (/** @type {any} */ (evidence.verification)).hash }),
+    ci: partSort({ headSha: evidence.ci.headSha, state: (/** @type {any} */ (evidence.ci)).state, hash: (/** @type {any} */ (evidence.ci)).hash }),
     pr: partSort({ headSha: evidence.pr.headSha, prHeadSha: evidence.pr.prHeadSha }),
   };
   const sorted = partSort(payload);
