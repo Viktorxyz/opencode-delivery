@@ -262,11 +262,29 @@ function extractReferences(text) {
   for (const m of text.matchAll(reMd)) {
     const v = m[1].split("#")[0];
     if (v && !v.startsWith("http") && !v.startsWith("mailto:") && !v.startsWith("/")) {
+      // Treat only MD links with a file extension as vendored
+      // companion references; bare names like `[link](link)` in
+      // upstream prose are conceptual pointers to URLs the user
+      // supplies, not vendored companions.
+      const slash = Math.max(v.lastIndexOf("/"), 0);
+      const basename = v.slice(slash + 1);
+      if (!basename.includes(".") || basename.startsWith(".")) continue;
       out.push({ kind: "file", value: v });
     }
   }
   for (const m of text.matchAll(reCode)) {
     const v = m[1];
+    // Only treat backticked references as file refs when they look
+    // like a relative path (./foo.md, ../foo.md). Bare names like
+    // `CONTEXT.md` in upstream prose are conceptual references to
+    // files the user creates in their own repo, not vendored
+    // companions.
+    if (!v.startsWith("./") && !v.startsWith("../")) continue;
+    // Must look like a filename: must contain a `.` for the extension
+    // and the basename must be at least one character.
+    const slash = Math.max(v.lastIndexOf("/"), 0);
+    const basename = v.slice(slash + 1);
+    if (!basename.includes(".") || basename.startsWith(".")) continue;
     if (v.endsWith(".md") || v.endsWith(".js") || v.endsWith(".mjs")) {
       out.push({ kind: "file", value: v });
     }

@@ -1,25 +1,19 @@
 ---
 name: handoff
-description: Produce a compact handoff payload that the next session can resume from without a chat summary.
+description: Compact the current conversation into a handoff document for another agent to pick up.
+argument-hint: "What will the next session be used for?"
+disable-model-invocation: true
 ---
 
-# handoff
+Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.
 
-The handoff payload is the Ship compact resume block, not a
-narrative. It contains:
-  - workflow id, issue number, PR number (or null),
-  - lifecycle state, branch, worktree path,
-  - HEAD SHA, plan path + revision + hash,
-  - completed tasks as `taskId:commitSha` pairs,
-  - active task id, state, and round,
-  - pending gate,
-  - child session ids and states,
-  - todos by status,
-  - last event sequence and hash,
-  - the exact resume command.
+Include a "suggested skills" section in the document, which suggests skills that the agent should invoke.
 
-Never include plan bodies, reviews, diffs, command output, or
-secrets in the handoff payload.
+Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
+
+Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+
+If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.
 
 ## Ship integration
 
