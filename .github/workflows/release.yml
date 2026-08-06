@@ -102,10 +102,13 @@ jobs:
         run: |
           # The release may be triggered by a tag push or by a
           # workflow_dispatch input. The latter takes precedence.
+          # Use ${{ github.ref_name }} (workflow expression) instead
+          # of ${GITHUB_REF_NAME} (shell env) so the value is always
+          # populated from the workflow context.
           if [[ -n "${{ github.event.inputs.tag }}" ]]; then
             ref="${{ github.event.inputs.tag }}"
           else
-            ref="${GITHUB_REF_NAME}"
+            ref="${{ github.ref_name }}"
           fi
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
       - name: checkout release ref
@@ -117,7 +120,13 @@ jobs:
       - name: compute version and tag
         id: meta
         run: |
+          set -euo pipefail
           tag="${{ steps.refs.outputs.ref }}"
+          if [ ! -f package.json ]; then
+            echo "::error::package.json not found at $(pwd)"
+            ls -la
+            exit 2
+          fi
           pkg_version="$(node -p "require('./package.json').version")"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "pkg_version=${pkg_version}" >> "$GITHUB_OUTPUT"
@@ -447,7 +456,12 @@ jobs:
       - name: validate tag and lock
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${{ github.ref_name }}"
+          if [ ! -f package.json ]; then
+            echo "::error::package.json not found at $(pwd)"
+            ls -la
+            exit 2
+          fi
           pkg_version="$(node -p "require('./package.json').version")"
           lock_version="$(node -p "require('./package-lock.json').version")"
           expected_tag="${pkg_version}"
@@ -469,11 +483,11 @@ jobs:
           # or on any other tracked branch; in every case the release
           # is admissible as long as the tag commit is reachable from
           # at least one remote branch.
-          TAG_SHA="$(git rev-parse "${GITHUB_REF_NAME}")"
+          TAG_SHA="$(git rev-parse "${{ github.ref_name }}")"
           if git branch -r --contains "${TAG_SHA}" | grep -q 'origin/'; then
-            echo "tag ${GITHUB_REF_NAME} is reachable from a tracked origin branch"
+            echo "tag ${{ github.ref_name }} is reachable from a tracked origin branch"
           else
-            echo "::error::tag ${GITHUB_REF_NAME} is not reachable from any origin branch; merge first"
+            echo "::error::tag ${{ github.ref_name }} is not reachable from any origin branch; merge first"
             exit 2
           fi
       - name: validate pins
@@ -522,7 +536,7 @@ jobs:
           cat > "dist-pkg/opencode-ship-${ver}.qualification.json" <<EOF
           {
             "schemaVersion": 2,
-            "tag": "${GITHUB_REF_NAME}",
+            "tag": "${{ github.ref_name }}",
             "sourceTagSha": "${sha}",
             "gateHead": "${gate_head}",
             "toolVersion": "${ver}",
