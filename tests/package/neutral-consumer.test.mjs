@@ -91,7 +91,18 @@ test("neutral: engineering init records the Plan Mode pointer", async (t) => {
   const repo = await makeConsumerRepo(origin);
   t.after(async () => rm(repo, { recursive: true, force: true }));
 
-  const r = spawnSync("node", [join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json", "--profile", "engineering"], { encoding: "utf8" });
+  // The engineering profile requires explicit models before any
+  // write. The fail-closed planner leaves the project in core
+  // state when the models are missing, so the test must supply
+  // them via the available CLI flags.
+  const r = spawnSync("node", [
+    join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json",
+    "--profile", "engineering",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repo, ".opencode/ship.lock.json"), "utf8"));
   const pointers = (lock.manager?.rootDocuments ?? []).flatMap((d) => d.pointers ?? []);
@@ -108,7 +119,14 @@ test("neutral: engineering -> core removes the Plan Mode pointer and engineering
   const repo = await makeConsumerRepo(origin);
   t.after(async () => rm(repo, { recursive: true, force: true }));
 
-  const r1 = spawnSync("node", [join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json", "--profile", "engineering"], { encoding: "utf8" });
+  const r1 = spawnSync("node", [
+    join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json",
+    "--profile", "engineering",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ], { encoding: "utf8" });
   assert.equal(r1.status, 0, r1.stderr);
   assert.ok(existsSync(join(repo, ".opencode/skills/triage/SKILL.md")));
 

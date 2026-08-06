@@ -96,7 +96,9 @@ test("neutral: two-task workflow journey with fake GitHub and model harness", as
   t.after(async () => rm(origin, { recursive: true, force: true }));
   t.after(async () => rm(repo, { recursive: true, force: true }));
 
-  // 1. Engineering init with explicit model IDs.
+  // 1. Engineering init with explicit model IDs and the fixed
+  //    approval policy. The failure-closed planner rejects any
+  //    engineering init without the explicit approval block.
   const cfgDir = join(repo, ".opencode");
   await mkdir(cfgDir, { recursive: true });
   await writeFile(join(cfgDir, "ship.config.json"), JSON.stringify({
@@ -107,6 +109,10 @@ test("neutral: two-task workflow journey with fake GitHub and model harness", as
         planner: "fake/strong-planner",
         builder: "fake/cheap-builder",
         finalReviewer: "fake/strong-reviewer",
+      },
+      approval: {
+        mirrorToIssue: true,
+        maxFailedRounds: 3,
       },
     },
   }, null, 2));

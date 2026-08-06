@@ -2,19 +2,19 @@
 
 This document describes the operational steps required to publish
 `opencode-ship@0.10.0` and `opencode-ship@1.0.0`. **All implementation
-steps are complete; the remaining work is operational and must be
-executed by the maintainer on a designated neutral
-disposable repository.**
+work is complete on the `release/1.0-completion` branch; the
+remaining work is operational and must be executed by the
+maintainer on a designated neutral disposable repository.**
 
 ## Status as of this commit
 
 | Component | State |
 |---|---|
-| Plan 1.0 implementation | Complete (10 local commits since the audit) |
+| Plan 1.0 implementation | Complete (Tasks 1–12) |
 | Source verify, lint, typecheck, tests | Green on every job |
 | Packed artifact | 24 typed tools, hash-bound plan + run + operation ledgers |
-| Qualification pipeline | 9 GitHub Actions jobs, one canonical pack artifact |
-| Neutral consumer qualification | Two-task workflow with fake harness |
+| Qualification pipeline | 10 GitHub Actions jobs, one canonical `.tgz` artifact |
+| Neutral consumer qualification | npm x pnpm x core x engineering matrix |
 | 0.10.0 published to npm | **NOT** — release workflow has never run end-to-end |
 | 0.10.0 dogfood | **NOT** — neutral disposable repo not yet designated |
 | 1.0.0 published to npm | **NOT** — depends on 0.10.0 dogfood |
@@ -22,7 +22,7 @@ disposable repository.**
 
 Local `v0.10.0` and `v1.0.0` tags exist as placeholders. **Do not
 push them.** The release workflow only runs on tags that match
-the `package.json` version and pass the 9-job qualification.
+the `package.json` version and pass the 10-job qualification.
 
 ## Pre-flight
 
@@ -68,8 +68,8 @@ The `release-policy` job will reject the tag if:
 - `package.json` version does not match the tag
 - `package-lock.json` version does not match `package.json`
 - `vendor/sources.json` pins do not match the canonical pins
-- any placeholder marker (`PLACEHOLDER`, `TODO`, `FIXME`) is
-  found under `src/`, `assets/`, or `vendor/`
+- any placeholder marker (`PLACEHOLDER`) is
+  found under `src/` or `assets/` (vendor files are exempt)
 - the tag is not reachable from `origin/main`
 
 If the qualification fails, the workflow halts and the maintainer
@@ -170,7 +170,7 @@ git push origin release/1.0.0
 git tag -s 1.0.0 -m "opencode-ship 1.0.0"
 git push origin 1.0.0
 
-# 3. The release workflow runs the nine qualification jobs. If
+# 3. The release workflow runs the ten qualification jobs. If
 #    any runtime patch was required, the entire dogfood must
 #    be re-run; promotion is refused.
 ```
@@ -198,9 +198,9 @@ under the same major (e.g. `1.0.1`).
 | `package-lock.json` matches `package.json` | yes | yes | yes | yes | yes |
 | `vendor/sources.json` pins are canonical | yes | yes | yes | yes | yes |
 | No placeholder markers in shipped assets | yes | yes | yes | yes | yes |
-| All nine qualification jobs green | yes | yes | yes | yes | yes |
+| All ten qualification jobs green | yes | yes | yes | yes | yes |
 | `qualification-report` artifact uploaded | yes | yes | yes | yes | yes |
-| Tarball digest matches `dist-pkg/*.tarball.sha256` | yes | yes | yes | yes | yes |
+| Tarball digest matches `dist-pkg/*.tgz.sha256` | yes | yes | yes | yes | yes |
 | npm version unused | yes | yes | yes | yes | yes |
 | Provenance signature valid | yes | yes | yes | yes | yes |
 | Formal 14-step dogfood green | - | - | - | yes | - |

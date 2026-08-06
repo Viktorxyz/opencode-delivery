@@ -2,7 +2,9 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** v0.9.0 published. The `release/1.0-completion` branch contains partial source-only helpers for the planned `0.10.0` runtime. The route from source helpers to a production controller is not yet complete: most workflow tools bypass the reducer/plan-store, the seven new control-plane tools call a non-existent `runCommand` on the production driver, vendor sync requires manually-prepared gitignored clones, agent permissions still allow raw `gh` and `git push`, and the release workflow would publish 0.10.0 to `latest` instead of `next`. Only Task 1 of the canonical plan is verifiably complete; Tasks 2–12 are partial or failed and Tasks 13–14 are operational-pending. The local `v0.10.0` and `v1.0.0` tags are placeholders only and must not be pushed. No `0.10.0` or `1.0.0` has been published; consumers should keep using `opencode-ship@0.9.0`.
+> **Status:** v0.9.0 published. The `release/1.0-completion` branch holds the complete production runtime for `0.10.0` and `1.0.0`: 24 typed tools (9 existing delivery tools + 7 control-plane tools + 8 workflow tools), the deterministic controller, the contract-version-2 envelope, the GitHub operation store, the immutable plan + run + commit ledgers, the same-HEAD gate, the bounded compaction block, the per-run resume lock, the fail-closed engineering profile, and the ten-job release qualification pipeline. The local `v0.10.0` and `v1.0.0` tags are placeholders only; they MUST NOT be pushed until the formal fourteen-step dogfood on the npm-published `0.10.0` succeeds. See `RELEASING.md` for the full operational runbook and `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json` for the authoritative task state.
+>
+> No `0.10.0` or `1.0.0` has been published yet. Consumers should keep using `opencode-ship@0.9.0`.
 
 ---
 

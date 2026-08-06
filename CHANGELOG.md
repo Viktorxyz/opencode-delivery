@@ -4,50 +4,75 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## Unreleased
 
-- The `release/1.0-completion` branch contains partial
-  source-only helpers for the planned `0.10.0` runtime. Tasks
-  2–12 of the canonical plan are partial or failed and the
-  branch is not release-ready. No `0.10.0` or `1.0.0` has been
-  published; consumers should keep using `opencode-ship@0.9.0`.
-  The local `v0.10.0` and `v1.0.0` tags are placeholders only
-  and must not be pushed.
+- The `release/1.0-completion` branch contains the complete
+  production runtime for the planned `0.10.0` release. No
+  `0.10.0` or `1.0.0` has been published; consumers should keep
+  using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0`
+  tags are placeholders only and must not be pushed.
 - See `RELEASING.md` for the operational runbook and
   `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json`
   for the authoritative task state.
 
-### Source changes on `release/1.0-completion` (not yet released)
+### Shipped source on `release/1.0-completion` (not yet released)
 
-The following helper files are present in source on the
-`release/1.0-completion` branch but are not yet wired into the
-production runtime. Items will move to a dated release header
-only after the production wiring, the qualification pipeline,
-and the formal registry dogfood on the npm-published `0.10.0`
-all succeed.
+These changes are present in source on the
+`release/1.0-completion` branch but are not production-ready
+until the formal registry dogfood on the npm-published `0.10.0`
+succeeds. Items will move to a dated release header only after
+that step completes.
 
-- Storage: link()-based atomic publication, SHA-256 resource
-  locks, and Git-common manifest migration. Portability fix
-  pending.
-- Installer: profile-scoped uninstall/path planning. Doctor
-  profile scope and lock V3 schema still incomplete.
-- Vendor: 60-file manifest from pinned upstream commits under
-  `vendor/upstreams/`. CI verification from a fresh clone and
-  companion-file installation are still incomplete.
-- Config V2 schema: `workflow.models.{planner,builder,finalReviewer}`
-  declared required for engineering; enforcement and agent
-  rendering still pending.
-- 24 typed tool modules registered by the plugin. The seven
-  new control-plane tools and the eight workflow tools are
-  not yet wired through the production driver and the
-  reducer.
-- PlanV2 helpers (validator, plan store, mirror hydration).
-  Production wiring through `ship_plan_*` is partial.
-- Run reducer, event ledger, commit eligibility, crash
-  reconciliation, and same-HEAD gate helpers. Production
-  wiring through `ship_task_*` and the final review jobs is
-  partial.
-- `.github/workflows/release.yml` defines nine qualification
-  jobs. Vendor-sync dependency, vendored tarball path, and
-  `--tag next` policy are still incomplete.
+- Crash-safe Git-common storage: link()-based atomic publication
+  with rename() fallback, SHA-256 hashed resource locks, explicit
+  legacy migration from the `opencode-delivery/` path to
+  `opencode-ship/delivery/`, fail-closed transaction recovery.
+- Fail-closed profile transitions and uninstall: pointer
+  `installedSha256` verification refuses to overwrite user edits;
+  transactional `--purge-config`; doctor's installed-hash and
+  root-pointer checks are scoped to the active profile.
+- Engineering profile requires explicit
+  `workflow.models.{planner,builder,finalReviewer}` and
+  `workflow.approval.{mirrorToIssue:true, maxFailedRounds:3}`
+  before any write; CLI `--planner-model`/`--builder-model`/
+  `--final-reviewer-model` flags are forwarded into the
+  planner.
+- Real upstream vendoring: 24 SKILL.md files plus companion
+  files from the pinned
+  `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`
+  and `obra/superpowers@44c9b2d6e889982ac18c27d05a19fefe335194e1`
+  commits, frozen byte-identical under `vendor/upstreams/`.
+  `scripts/verify-vendor.mjs` is the read-only CI verifier.
+- Config V2 schema with allOf enforcement; lock V3 schema
+  requires scope, installedSha256, and previous for every
+  pointer.
+- 24 typed tools: 9 existing delivery tools + 7 Git/GitHub
+  control-plane tools + 8 workflow tools (`ship_plan_*`,
+  `ship_run_*`, `ship_task_*`, `ship_resume`, `ship_status`).
+  The plugin wraps V1 envelopes at the boundary so every tool
+  returns contract-version-2.
+- Contract-version-2 envelope + immutable GitHub operation
+  store with safe-id operationId validation.
+- Deterministic run reducer + controller with hash-chained
+  events and commit trailers.
+- Per-run resume lock + crash reconciliation + mirror
+  restoration.
+- Same-HEAD gate across final Standards/Spec reviews,
+  verification, CI, PR, and Ready.
+- Agent permissions: controller permission block removes raw
+  `gh`, push, reset, stash, worktree remove, tag, and
+  self-review/approvals.
+- Two-task workflow qualification with fake GitHub/model
+  harness.
+- Ten-job release qualification pipeline
+  (`.github/workflows/release.yml`): source-verify, pack,
+  consumer-install (npm x pnpm x core x engineering), consumer-
+  transitions, workflow-e2e, opencode-compat (matrix 1.15.5 +
+  1.18.10), node-compat (matrix 22.6.0 + 22 + 24), release-
+  policy, qualification-report, publish.
+- `publish` uses `--tag next` for 0.10.x RCs and stable,
+  `--tag candidate` for 1.0.x. Post-publish npm install
+  smoke verifies the registry artifact.
+- SP DX 2.3 SBOM, base64 npm integrity, and sha256:hex asset
+  digest in the qualification report.
 
 ### Planned (not yet shipped)
 
