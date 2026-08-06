@@ -103,7 +103,11 @@ jobs:
           fi
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
       - name: checkout release ref
-        run: git checkout "${{ steps.refs.outputs.ref }}"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ steps.refs.outputs.ref }}
       - name: compute version and tag
         id: meta
         run: |
