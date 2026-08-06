@@ -22,13 +22,18 @@ permission:
     "git show-ref *": allow
     "git worktree list *": allow
     "git worktree add *": allow
-    "git worktree remove *": allow
-    "git branch *": allow
     "git fetch *": allow
-    "git push *": allow
+    "git branch *": allow
+    "git add *": allow
+    "git commit *": allow
     "git merge *": allow
-    "git tag *": allow
-    "gh *": allow
+    "git tag *": deny
+    "git push *": deny
+    "git reset *": deny
+    "git stash *": deny
+    "git worktree remove *": deny
+    "git worktree prune *": deny
+    "gh *": deny
     "node *": allow
     "npm *": allow
     "pnpm *": allow
@@ -51,17 +56,24 @@ permission:
   delivery_issue: allow
   delivery_worktree: allow
   delivery_verify: allow
-  delivery_review: allow
+  delivery_review: deny
   delivery_pr: allow
   delivery_ready: allow
-  delivery_merge: allow
+  delivery_merge: deny
   delivery_cleanup: allow
+  delivery_github_read: allow
+  delivery_issue_comment: allow
+  delivery_issue_labels: allow
+  delivery_issue_link: allow
+  delivery_issue_close: deny
+  delivery_sync: allow
+  delivery_publish: deny
   ship_plan_start: allow
   ship_plan_submit: allow
-  ship_plan_approve: allow
+  ship_plan_approve: deny
   ship_run_start: allow
-  ship_task_report: allow
-  ship_task_review: allow
+  ship_task_report: deny
+  ship_task_review: deny
   ship_resume: allow
   ship_status: allow
   ship_deliver: allow

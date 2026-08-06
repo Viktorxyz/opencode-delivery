@@ -1,17 +1,16 @@
 /**
  * ship_plan_submit tool.
  *
- * Validates the submitted PlanV2 against the schema and the
- * canonical JSON hash. The record is rejected if the schema is
- * wrong, the hash does not match, or the planner identity is not
- * the configured planner.
+ * Planner-only immutable PlanV2 submission. The plan bytes go
+ * through the canonical PlanV2 validator and the immutable plan
+ * store so the rest of the workflow sees one record format.
  */
 
 import { success, failure } from "./envelope.js";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { resolveGitCommonDir, opencodeShipStateDir } from "../state/git-common-dir.js";
-import { canonicalize, hashPayload } from "../workflow/plan.js";
+import { validatePlanV2, computePlanHash } from "../workflow/plan.js";
+import { publishPlanRevision } from "../workflow/plan-store.js";
+
+const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
 
 export function createPlanSubmitTool(deps) {
   return async function planSubmit(input) {
@@ -20,34 +19,32 @@ export function createPlanSubmitTool(deps) {
     const revision = Number(input.revision);
     const plan = input.plan;
     const submittedBy = String(input.submittedBy ?? "");
-    if (!workflowId) return failure("plan-submit", "workflowId required", { operationId: opId, retryable: false });
+    if (!workflowId || !SAFE_ID_RE.test(workflowId)) {
+      return failure("plan-submit", "workflowId required (safe id)", { operationId: opId, retryable: false });
+    }
     if (!Number.isInteger(revision) || revision <= 0) {
       return failure("plan-submit", "revision must be a positive integer", { operationId: opId, retryable: false });
     }
     if (!plan || typeof plan !== "object") {
       return failure("plan-submit", "plan object required", { operationId: opId, retryable: false });
     }
-    const expectedHash = hashPayload(plan);
+    const v = validatePlanV2(plan);
+    if (!v.ok) {
+      return failure("plan-submit", `plan validation failed: ${v.issues.join("; ")}`, { operationId: opId, retryable: false });
+    }
+    const expectedHash = computePlanHash(plan);
     const providedHash = String(input.sha256 ?? "");
     if (providedHash && providedHash !== expectedHash) {
       return failure("plan-submit", `sha256 mismatch (expected ${expectedHash.slice(0, 8)}, got ${providedHash.slice(0, 8)})`, { operationId: opId, retryable: false });
     }
-    const revisionDir = join("revisions", `${String(revision).padStart(6, "0")}`);
     try {
-      const commonDir = await resolveGitCommonDir(deps.repoRoot);
-      const targetDir = join(opencodeShipStateDir(commonDir), "plans", workflowId, revisionDir);
-      await import("node:fs/promises").then((fs) => fs.mkdir(targetDir, { recursive: true }));
-      const record = {
+      const result = await publishPlanRevision(deps.repoRoot, plan);
+      return success("plan-submit", {
         workflowId,
         revision,
-        sha256: expectedHash,
-        submittedBy,
-        canonicalJson: canonicalize(plan),
-        submittedAt: new Date().toISOString(),
-        status: "submitted",
-      };
-      await writeFile(join(targetDir, "plan.json"), JSON.stringify(record, null, 2), "utf8");
-      return success("plan-submit", { workflowId, revision, sha256: expectedHash }, { operationId: opId });
+        sha256: result.hash,
+        recorded: result.recorded,
+      }, { operationId: opId });
     } catch (err) {
       return failure("plan-submit", String(err?.message ?? err), { operationId: opId, retryable: true });
     }

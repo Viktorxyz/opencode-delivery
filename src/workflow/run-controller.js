@@ -25,6 +25,11 @@
  * Invariant: at most one task is active at any time. The
  * reducer refuses to advance from "running" with a different
  * task id than the one already recorded.
+ *
+ * Every recorded event is hash-chained: each event carries the
+ * SHA-256 of the previous event's bytes and the SHA-256 of its
+ * own canonical bytes. A corrupted or reordered ledger is
+ * detected by replaying the chain.
  */
 
 import { createHash } from "node:crypto";
@@ -91,7 +96,11 @@ function nextSequence(events) {
 }
 
 function appendEvent(state, recorded) {
-  return [...state.events, recorded];
+  const prev = state.events[state.events.length - 1];
+  const priorHash = prev?.hash ?? "0".repeat(64);
+  const hash = sha256(canonicalize({ kind: recorded.kind, data: recorded.data, at: recorded.at, sequence: recorded.sequence, priorHash }));
+  const withHash = { ...recorded, priorHash, hash };
+  return [...state.events, withHash];
 }
 
 function ensureActiveTask(state, taskId) {
@@ -132,9 +141,13 @@ export function reduce(state, event) {
       if (state.activeTask !== null) {
         throw new Error(`run reducer: TASK_DISPATCH while another task is active (${state.activeTask})`);
       }
+      // A fix round preserves the round counter; the very first
+      // dispatch starts at round 1. The task id stays the same so
+      // the reducer's at-most-one-active-task invariant holds.
+      const round = state.round > 0 ? state.round : 1;
       return {
-        state: nextState({ state: STATES.RUNNING, activeTask: event.data.taskId, round: 1 }),
-        event: recorded(EVENT_KINDS.TASK_DISPATCH, { taskId: event.data.taskId, briefHash: event.data.briefHash }),
+        state: nextState({ state: STATES.RUNNING, activeTask: event.data.taskId, round }),
+        event: recorded(EVENT_KINDS.TASK_DISPATCH, { taskId: event.data.taskId, briefHash: event.data.briefHash, round }),
       };
     }
     case EVENT_KINDS.TASK_REVIEW: {
