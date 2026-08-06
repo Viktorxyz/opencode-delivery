@@ -363,9 +363,20 @@ jobs:
           tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
           mkdir -p /tmp/opencode-compat
           cd /tmp/opencode-compat
+          # Initialise a git repo so the plugin's resolveGitCommonDir
+          # helper can locate state under .git/opencode-ship/.
+          git init -q --initial-branch main
+          git config user.email "ci@local"
+          git config user.name "ci"
+          echo "# opencode-compat" > README.md
+          git add . && git commit -qm init
           tar -xzf "$tarball"
           npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
-          node --test --test-concurrency=1 package/tests/plugin/plugin-load.test.mjs
+          # The test uses resolve("dist/plugin.js") relative to cwd;
+          # the packed tarball wraps the plugin in package/dist/plugin.js,
+          # so we cd into package and run the test from there.
+          cd package
+          node --test --test-concurrency=1 tests/plugin/plugin-load.test.mjs
 
   node-compat:
     name: node-compat
