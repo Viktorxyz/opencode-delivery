@@ -657,7 +657,7 @@ jobs:
       - name: verify Node and npm versions for trusted publishing
         run: |
           set -euo pipefail
-          node_major_minor="$(node -p 'process.versions.node.split(\".\").slice(0,2).join(\".\")')"
+          node_major_minor="$(node -p 'process.versions.node.split(".").slice(0,2).join(".")')"
           node_major="${node_major_minor%%.*}"
           node_minor="${node_major_minor#*.}"
           npm_version="$(npm --version)"
