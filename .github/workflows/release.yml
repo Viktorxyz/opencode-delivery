@@ -40,7 +40,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: install dependencies
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
@@ -84,7 +83,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: install dependencies
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
@@ -165,7 +163,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: setup-pnpm
         if: matrix.tool == 'pnpm'
         uses: pnpm/action-setup@v4
@@ -253,7 +250,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: upgrade + downgrade + uninstall
         run: |
           set -euo pipefail
@@ -320,7 +316,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: install dependencies
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
@@ -362,7 +357,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: install opencode plugin
         run: npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
         env:
@@ -395,7 +389,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
       - name: install dependencies
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
@@ -569,7 +562,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.13.0"
-          cache: npm
           registry-url: https://registry.npmjs.org
       - name: install npm with trusted publishing
         run: npm install --global npm@11.5.2
