@@ -9,3 +9,4 @@ coverage
 tsconfig.dts.json
 dist-pkg/
 vendor/upstreams-clones/
+dist.prev/
