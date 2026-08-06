@@ -19,10 +19,12 @@ const NOTICES_PATH = join(REPO, "THIRD_PARTY_NOTICES.md");
 
 const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"));
 const sorted = [...manifest.sources].sort((a, b) => a.localTarget.localeCompare(b.localTarget));
+const pkg = JSON.parse(await readFile(join(REPO, "package.json"), "utf8"));
+const version = pkg.version || "0.0.0";
 
 const header = `# Third-Party Notices
 
-\`opencode-ship@1.0.0\` ships the complete Matt Pocock and Superpowers
+\`opencode-ship@${version}\` ships the complete Matt Pocock and Superpowers
 methodology under the MIT license, plus the Ship-owned installer,
 plugin, agents, and skills. The complete immutable pin list is in
 \`vendor/sources.json\`; the upstream snapshots are under

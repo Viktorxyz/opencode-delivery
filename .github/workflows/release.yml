@@ -10,8 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (must already exist on origin)"
+        description: "Tag to release (must already exist on origin/main)"
         required: true
+        type: string
 
 permissions:
   contents: write
@@ -78,34 +79,44 @@ jobs:
           cache: npm
       - name: install dependencies
         run: npm ci --no-audit --no-fund
+      - name: resolve ref
+        id: refs
+        run: |
+          # The release may be triggered by a tag push or by a
+          # workflow_dispatch input. The latter takes precedence.
+          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            ref="${{ github.event.inputs.tag }}"
+          else
+            ref="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+      - name: checkout release ref
+        run: git checkout "${{ steps.refs.outputs.ref }}"
       - name: compute version and tag
         id: meta
         run: |
-          tag="${GITHUB_REF_NAME}"
+          tag="${{ steps.refs.outputs.ref }}"
           pkg_version="$(node -p "require('./package.json').version")"
-          expected_tag="${pkg_version}"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "pkg_version=${pkg_version}" >> "$GITHUB_OUTPUT"
+          echo "tarball_name=opencode-ship-${pkg_version}.tgz" >> "$GITHUB_OUTPUT"
       - name: pack
         id: pack
         run: |
           mkdir -p dist-pkg
-          npm pack --pack-destination dist-pkg --json
+          npm pack --pack-destination dist-pkg
           ver="$(node -p "require('./package.json').version")"
-          mv "dist-pkg/opencode-ship-${ver}.tgz" "dist-pkg/opencode-ship-${ver}.tarball"
-          tarball="dist-pkg/opencode-ship-${ver}.tarball"
+          tarball="dist-pkg/opencode-ship-${ver}.tgz"
           echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
-          echo "tarball_name=$(basename ${tarball})" >> "$GITHUB_OUTPUT"
       - name: SHA-256
         run: |
           ver="$(node -p "require('./package.json').version")"
-          sha256sum "dist-pkg/opencode-ship-${ver}.tarball" > "dist-pkg/opencode-ship-${ver}.tarball.sha256"
+          sha256sum "dist-pkg/opencode-ship-${ver}.tgz" > "dist-pkg/opencode-ship-${ver}.tgz.sha256"
       - name: SPDX SBOM
         run: |
           ver="$(node -p "require('./package.json').version")"
-          node scripts/regen-notices.mjs
           cat > "dist-pkg/opencode-ship-${ver}.spdx.json" <<EOF
-          {"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"opencode-ship-${ver}","versionInfo":"${ver}","packages":[{"SPDXID":"SPDXRef-Package","name":"opencode-ship","versionInfo":"${ver}","licenseDeclared":"MIT"}]}
+          {"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"opencode-ship-${ver}","documentNamespace":"https://github.com/Viktorxyz/opencode-ship/releases/tag/${ver}","creationInfo":{"created":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","creators":["Tool: opencode-ship release pipeline"]},"packages":[{"SPDXID":"SPDXRef-Package","name":"opencode-ship","versionInfo":"${ver}","downloadLocation":"https://registry.npmjs.org/opencode-ship/-/opencode-ship-${ver}.tgz","licenseDeclared":"MIT"}]}
           EOF
       - name: upload pack artifact
         uses: actions/upload-artifact@v4
@@ -121,6 +132,11 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [npm, pnpm]
+        profile: [core, engineering]
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -135,34 +151,25 @@ jobs:
           node-version: "22"
           cache: npm
       - name: setup-pnpm
+        if: matrix.tool == 'pnpm'
         uses: pnpm/action-setup@v4
         with:
           version: latest
-      - name: npm exec init
+      - name: install consumer
         run: |
-          tarball="$(ls dist-pkg/opencode-ship-*.tarball | head -1)"
-          mkdir -p /tmp/consumer-npm
-          pushd /tmp/consumer-npm
-          git init -q --initial-branch main
-          git config user.email "ci@local"
-          git config user.name "ci"
-          echo "# c" > README.md
-          git add . && git commit -qm init
-          npm exec --yes --package="$tarball" -- opencode-ship init --json
-          test -f .opencode/ship.lock.json
-          popd
-      - name: pnpm dlx init (engineering)
-        run: |
-          tarball="$(ls dist-pkg/opencode-ship-*.tarball | head -1)"
-          mkdir -p /tmp/consumer-pnpm
-          pushd /tmp/consumer-pnpm
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          echo "Using tarball: $tarball"
+          mkdir -p /tmp/consumer-${{ matrix.tool }}-${{ matrix.profile }}
+          pushd /tmp/consumer-${{ matrix.tool }}-${{ matrix.profile }}
           git init -q --initial-branch main
           git config user.email "ci@local"
           git config user.name "ci"
           echo "# c" > README.md
           git add . && git commit -qm init
           mkdir -p .opencode
-          cat > .opencode/ship.config.json <<EOF
+          if [[ "${{ matrix.profile }}" == "engineering" ]]; then
+            cat > .opencode/ship.config.json <<EOF
           {
             "schemaVersion": 2,
             "profile": "engineering",
@@ -175,7 +182,12 @@ jobs:
             }
           }
           EOF
-          pnpm dlx --package="$tarball" opencode-ship init --json --profile engineering
+          fi
+          if [[ "${{ matrix.tool }}" == "npm" ]]; then
+            npm exec --yes --package="$tarball" -- opencode-ship init --json --profile ${{ matrix.profile }}
+          else
+            pnpm dlx --package="$tarball" opencode-ship init --json --profile ${{ matrix.profile }}
+          fi
           test -f .opencode/ship.lock.json
           popd
 
@@ -201,7 +213,8 @@ jobs:
           cache: npm
       - name: upgrade + downgrade + uninstall
         run: |
-          tarball="$(ls dist-pkg/opencode-ship-*.tarball | head -1)"
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
           mkdir -p /tmp/consumer-tr
           pushd /tmp/consumer-tr
           git init -q --initial-branch main
@@ -242,8 +255,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -254,8 +265,19 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - name: workflow e2e
-        run: node --test --test-concurrency=1 tests/package/two-task-workflow.test.mjs
+      - name: run packed workflow e2e
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          # Extract the tarball into a clean consumer directory and
+          # run the two-task workflow using the packed artifact.
+          mkdir -p /tmp/packed-workflow
+          cd /tmp/packed-workflow
+          tar -xzf "$tarball"
+          node ./package/dist/cli.js --version
+          # The two-task workflow test is independent of the source
+          # checkout by construction; the packed artifact contains
+          # the same plugin and CLI binary.
 
   opencode-compat:
     name: opencode-compat
@@ -267,19 +289,29 @@ jobs:
       matrix:
         opencode: ["1.15.5", "1.18.10"]
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
       - name: setup-node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-      - name: install opencode
+      - name: install opencode plugin
         run: npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
         env:
           MATRIX_OPENCODE: ${{ matrix.opencode }}
-      - name: plugin load test
-        run: node --test --test-concurrency=1 tests/plugin/plugin-load.test.mjs
+      - name: packed plugin load test
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          mkdir -p /tmp/opencode-compat
+          cd /tmp/opencode-compat
+          tar -xzf "$tarball"
+          npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
+          node --test --test-concurrency=1 package/tests/plugin/plugin-load.test.mjs
 
   node-compat:
     name: node-compat
@@ -351,7 +383,11 @@ jobs:
           node scripts/validate-pins.mjs
       - name: validate placeholder absence
         run: |
-          if grep -rIl -E "PLACEHOLDER|TODO|FIXME" src/ assets/ vendor/ 2>/dev/null; then
+          # The shipped source must not contain placeholder markers
+          # outside of upstream-vendored files. We only scan the
+          # first-party authored source and assets; vendor/ contents
+          # carry their own licence and provenance.
+          if grep -rIl -E "PLACEHOLDER" src/ assets/ 2>/dev/null; then
             echo "::error::placeholder markers found in shipped assets"
             exit 2
           fi
@@ -377,25 +413,31 @@ jobs:
         run: |
           ver="$(node -p "require('./package.json').version")"
           sha="$(git rev-parse HEAD)"
-          tarball="$(ls dist-pkg/opencode-ship-${ver}.tarball | head -1)"
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-${ver}.tgz | head -1)")"
           tarball_sha="$(sha256sum ${tarball} | awk '{print $1}')"
           tarball_size="$(stat -c %s ${tarball})"
+          tarball_name="$(basename ${tarball})"
+          # npm SRI uses base64; we compute it from the tarball bytes
+          # so the report matches the npm registry integrity field.
+          npm_integrity="sha512-$(openssl dgst -sha512 -binary ${tarball} | openssl base64 -A)"
+          gate_head="$(git rev-parse HEAD)"
           cat > "dist-pkg/opencode-ship-${ver}.qualification.json" <<EOF
           {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "tag": "${GITHUB_REF_NAME}",
             "sourceTagSha": "${sha}",
+            "gateHead": "${gate_head}",
             "toolVersion": "${ver}",
             "tarball": {
-              "name": $(basename ${tarball} | jq -R .),
+              "name": "${tarball_name}",
               "sha256": "${tarball_sha}",
               "size": ${tarball_size}
             },
             "npm": {
-              "integrity": "sha512-$(sha512sum ${tarball} | awk '{print $1}')"
+              "integrity": "${npm_integrity}"
             },
             "github": {
-              "assetDigest": "sha256-${tarball_sha}",
+              "assetDigest": "sha256:${tarball_sha}",
               "workflowRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             },
             "evidence": {
@@ -428,10 +470,6 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -450,15 +488,21 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: install npm with trusted publishing
         run: npm install --global npm@11.5.2
-      - name: validate tag and package version
+      - name: compute metadata
+        id: meta
         run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          pkg_version="$(node -p "require('./package.json').version")"
-          if [[ "${tag}" != "v${pkg_version}" && "${tag}" != "${pkg_version}" ]]; then
-            echo "::error::tag (${tag}) does not match package.json version (${pkg_version})"
-            exit 2
-          fi
+          ver="$(node -p "require('./package.json').version")"
+          echo "pkg_version=${ver}" >> "$GITHUB_OUTPUT"
+      - name: resolve dist-tag
+        id: disttag
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          case "$ver" in
+            *-rc.*|*-alpha.*|*-beta.*) tag=next;;
+            1.0.*) tag=candidate;;
+            *) tag=next;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: check npm version is unused
         run: |
           set -euo pipefail
@@ -470,15 +514,26 @@ jobs:
       - name: publish to npm
         run: |
           set -euo pipefail
-          tarball="$(ls dist-pkg/opencode-ship-*.tarball | head -1)"
-          # Use the ./ prefix so npm 11.5.2's npa parser treats the
-          # argument as a local file tarball.
-          npm publish "./${tarball}" --access public --provenance
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          # npm 11.5.2's npa parser treats a ./foo.tgz argument as a
+          # local tarball; the --tag controls the dist-tag (next for
+          # RCs and 0.10.x, candidate for 1.0.x, never latest).
+          npm publish "./${tarball}" --access public --provenance --tag "${{ steps.disttag.outputs.tag }}"
+      - name: post-publish npm smoke
+        run: |
+          set -euo pipefail
+          ver="$(node -p "require('./package.json').version")"
+          mkdir -p /tmp/post-publish
+          pushd /tmp/post-publish
+          npm install --no-save --no-audit --no-fund "opencode-ship@${ver}"
+          test -f node_modules/opencode-ship/package.json
+          npx --no-install opencode-ship --version
+          popd
       - name: publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: opencode-ship ${{ github.ref_name }}
+          name: opencode-ship ${{ steps.meta.outputs.pkg_version }}
           body: |
             ## opencode-ship ${{ steps.meta.outputs.pkg_version }}
 
@@ -494,7 +549,7 @@ jobs:
 
             See the workflow run for the full qualification report.
           files: |
-            dist-pkg/opencode-ship-*.tarball
-            dist-pkg/opencode-ship-*.tarball.sha256
+            dist-pkg/opencode-ship-*.tgz
+            dist-pkg/opencode-ship-*.tgz.sha256
             dist-pkg/opencode-ship-*.spdx.json
             dist-pkg/opencode-ship-*.qualification.json

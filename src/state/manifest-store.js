@@ -5,7 +5,7 @@
  * The canonical storage path is
  * `<git-common-dir>/opencode-ship/delivery/manifests/<taskId>.json`.
  *
- * The pre-0.9.0 manifest directory `<git-common-dir>/opencode-delivery/manifests/`
+ * The pre-<legacy> manifest directory `<git-common-dir>/opencode-delivery/manifests/`
  * is honoured as a one-time read-only migration source. Once a manifest
  * has been read or written through the canonical path, the legacy
  * directory is not consulted again for that taskId.

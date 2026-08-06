@@ -36,7 +36,15 @@ async function initWith(repoRoot, extra = []) {
 test("init: --profile engineering writes manager.profile=engineering in the lock", async (t) => {
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
-  const r = await initWith(repoRoot, ["--profile", "engineering"]);
+  // The engineering profile requires explicit models now; the
+  // fail-closed planner rejects the install without them.
+  const r = await initWith(repoRoot, [
+    "--profile", "engineering",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ]);
   assert.equal(r.code, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lock.manager.profile, "engineering");
