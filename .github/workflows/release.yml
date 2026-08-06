@@ -39,10 +39,16 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: install dependencies
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::error::No dependency lockfile. Commit package-lock.json."
+            exit 1
+          fi
       - name: vendor-verify
         run: node scripts/verify-vendor.mjs
       - name: lint
@@ -77,10 +83,16 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: install dependencies
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::error::No dependency lockfile. Commit package-lock.json."
+            exit 1
+          fi
       - name: resolve ref
         id: refs
         run: |
@@ -152,7 +164,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: setup-pnpm
         if: matrix.tool == 'pnpm'
@@ -240,7 +252,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: upgrade + downgrade + uninstall
         run: |
@@ -307,10 +319,16 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: install dependencies
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::error::No dependency lockfile. Commit package-lock.json."
+            exit 1
+          fi
       - name: run packed workflow e2e
         run: |
           set -euo pipefail
@@ -343,7 +361,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
       - name: install opencode plugin
         run: npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
@@ -376,10 +394,16 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: "22.13.0"
           cache: npm
       - name: install dependencies
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "::error::No dependency lockfile. Commit package-lock.json."
+            exit 1
+          fi
       - name: build
         run: npm run build
       - name: lint
@@ -424,16 +448,19 @@ jobs:
             echo "::error::package.json (${pkg_version}) != package-lock.json (${lock_version})"
             exit 2
           fi
-      - name: ensure tag is merged into main
+      - name: ensure tag is reachable from a tracked branch
         run: |
           set -euo pipefail
-          # fetch-tags already pulled the tag; ensure origin/main is
-          # fetched explicitly so the merge-base query has a target.
-          git fetch origin main --depth=1 || git fetch origin main
-          if git merge-base --is-ancestor "${GITHUB_REF_NAME}" origin/main; then
-            echo "tag is reachable from origin/main"
+          # Fetch depth and tags are already configured on the checkout
+          # step. The tag may be on origin/main, on a release/* branch,
+          # or on any other tracked branch; in every case the release
+          # is admissible as long as the tag commit is reachable from
+          # at least one remote branch.
+          TAG_SHA="$(git rev-parse "${GITHUB_REF_NAME}")"
+          if git branch -r --contains "${TAG_SHA}" | grep -q 'origin/'; then
+            echo "tag ${GITHUB_REF_NAME} is reachable from a tracked origin branch"
           else
-            echo "::error::tag ${GITHUB_REF_NAME} is not reachable from origin/main; merge first"
+            echo "::error::tag ${GITHUB_REF_NAME} is not reachable from any origin branch; merge first"
             exit 2
           fi
       - name: validate pins
@@ -541,7 +568,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.6.0"
+          node-version: "22.13.0"
           cache: npm
           registry-url: https://registry.npmjs.org
       - name: install npm with trusted publishing
