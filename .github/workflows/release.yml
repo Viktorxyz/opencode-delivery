@@ -35,10 +35,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
       - name: install dependencies
         run: npm ci --no-audit --no-fund
@@ -72,10 +73,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
       - name: install dependencies
         run: npm ci --no-audit --no-fund
@@ -140,6 +142,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -148,7 +152,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
       - name: setup-pnpm
         if: matrix.tool == 'pnpm'
@@ -169,22 +173,47 @@ jobs:
           git add . && git commit -qm init
           mkdir -p .opencode
           if [[ "${{ matrix.profile }}" == "engineering" ]]; then
-            cat > .opencode/ship.config.json <<EOF
-          {
-            "schemaVersion": 2,
-            "profile": "engineering",
-            "workflow": {
-              "models": {
-                "planner": "fake/strong-planner",
-                "builder": "fake/cheap-builder",
-                "finalReviewer": "fake/strong-reviewer"
+            # Write the config with Node so the JSON is always valid
+            # and indentation cannot be silently stripped by the YAML
+            # parser (the previous heredoc was being mis-indented and
+            # the CLI received an empty file).
+            node -e '
+              const fs = require("fs");
+              fs.writeFileSync(
+                ".opencode/ship.config.json",
+                JSON.stringify({
+                  schemaVersion: 2,
+                  profile: "engineering",
+                  workflow: {
+                    models: {
+                      planner: "fake/strong-planner",
+                      builder: "fake/cheap-builder",
+                      finalReviewer: "fake/strong-reviewer",
+                    },
+                    approval: {
+                      mirrorToIssue: true,
+                      maxFailedRounds: 3,
+                    },
+                  },
+                }, null, 2) + "\n",
+              );
+            '
+            echo "DEBUG: .opencode/ship.config.json:"; cat .opencode/ship.config.json
+            node -e '
+              const f = JSON.parse(require("fs").readFileSync(".opencode/ship.config.json", "utf8"));
+              if (!f.workflow?.models?.planner || !f.workflow?.models?.builder || !f.workflow?.models?.finalReviewer) {
+                console.error("config missing required models");
+                process.exit(2);
               }
-            }
-          }
-          EOF
+            '
           fi
           if [[ "${{ matrix.tool }}" == "npm" ]]; then
-            npm exec --yes --package="$tarball" -- opencode-ship init --json --profile ${{ matrix.profile }}
+            # Install the tarball into the consumer workspace so the
+            # binary is resolved through the local node_modules. This
+            # keeps the CLI's CWD as the consumer directory and lets
+            # it read .opencode/ship.config.json reliably.
+            npm install --no-save --no-audit --no-fund "$tarball"
+            npx --yes opencode-ship init --json --profile ${{ matrix.profile }}
           else
             pnpm dlx --package="$tarball" opencode-ship init --json --profile ${{ matrix.profile }}
           fi
@@ -201,6 +230,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -209,7 +240,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
       - name: upgrade + downgrade + uninstall
         run: |
@@ -223,27 +254,40 @@ jobs:
           echo "# c" > README.md
           git add . && git commit -qm init
           # core init
-          npm exec --yes --package="$tarball" -- opencode-ship init --json
+          npm install --no-save --no-audit --no-fund "$tarball"
+          npx --yes opencode-ship init --json
           # upgrade to engineering
           mkdir -p .opencode
-          cat > .opencode/ship.config.json <<EOF
-          {
-            "schemaVersion": 2,
-            "profile": "engineering",
-            "workflow": {
-              "models": {
-                "planner": "fake/strong-planner",
-                "builder": "fake/cheap-builder",
-                "finalReviewer": "fake/strong-reviewer"
-              }
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync(
+              ".opencode/ship.config.json",
+              JSON.stringify({
+                schemaVersion: 2,
+                profile: "engineering",
+                workflow: {
+                  models: {
+                    planner: "fake/strong-planner",
+                    builder: "fake/cheap-builder",
+                    finalReviewer: "fake/strong-reviewer",
+                  },
+                  approval: { mirrorToIssue: true, maxFailedRounds: 3 },
+                },
+              }, null, 2) + "\n",
+            );
+          '
+          node -e '
+            const f = JSON.parse(require("fs").readFileSync(".opencode/ship.config.json", "utf8"));
+            if (!f.workflow?.models?.planner || !f.workflow?.models?.builder || !f.workflow?.models?.finalReviewer) {
+              console.error("config missing required models");
+              process.exit(2);
             }
-          }
-          EOF
-          npm exec --yes --package="$tarball" -- opencode-ship init --json --profile engineering
+          '
+          npx --yes opencode-ship init --json --profile engineering
           # downgrade
-          npm exec --yes --package="$tarball" -- opencode-ship init --json --profile core
+          npx --yes opencode-ship init --json --profile core
           # uninstall
-          npm exec --yes --package="$tarball" -- opencode-ship uninstall --json
+          npx --yes opencode-ship uninstall --json
           test ! -f .opencode/ship.lock.json
           popd
 
@@ -263,8 +307,10 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
       - name: run packed workflow e2e
         run: |
           set -euo pipefail
@@ -297,7 +343,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
       - name: install opencode plugin
         run: npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
@@ -325,6 +371,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: setup-node
         uses: actions/setup-node@v4
         with:
@@ -332,6 +380,8 @@ jobs:
           cache: npm
       - name: install dependencies
         run: npm ci --no-audit --no-fund
+      - name: build
+        run: npm run build
       - name: lint
         run: npm run lint
       - name: typecheck
@@ -349,6 +399,9 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -361,7 +414,9 @@ jobs:
           pkg_version="$(node -p "require('./package.json').version")"
           lock_version="$(node -p "require('./package-lock.json').version")"
           expected_tag="${pkg_version}"
-          if [[ "${tag}" != "${expected_tag}" ]]; then
+          # Strip optional leading "v" so v-prefixed tags are also accepted.
+          normalized="${tag#v}"
+          if [[ "${normalized}" != "${expected_tag}" ]]; then
             echo "::error::tag (${tag}) does not match package.json version (${pkg_version})"
             exit 2
           fi
@@ -372,6 +427,9 @@ jobs:
       - name: ensure tag is merged into main
         run: |
           set -euo pipefail
+          # fetch-tags already pulled the tag; ensure origin/main is
+          # fetched explicitly so the merge-base query has a target.
+          git fetch origin main --depth=1 || git fetch origin main
           if git merge-base --is-ancestor "${GITHUB_REF_NAME}" origin/main; then
             echo "tag is reachable from origin/main"
           else
@@ -483,7 +541,7 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.6.0"
           cache: npm
           registry-url: https://registry.npmjs.org
       - name: install npm with trusted publishing
