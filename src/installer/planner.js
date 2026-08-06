@@ -238,7 +238,7 @@ export async function planUninstall({ repoRoot, lock }) {
   return plan;
 }
 
-export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite, migrationSeed = null }) {
+export async function planConfigSynthesis({ repoRoot, detection, lock, forceOverwrite, migrationSeed = null, models = null }) {
   const existing = await loadConfig(repoRoot);
   if (existing?.ok && !forceOverwrite) {
     return {
@@ -252,7 +252,28 @@ export async function planConfigSynthesis({ repoRoot, detection, lock, forceOver
       reason: "user config already present",
     };
   }
-  const desiredValue = migrationSeed ?? renderDefaultConfig(detection);
+  let desiredValue = migrationSeed ?? renderDefaultConfig(detection);
+  if (models && (models.planner || models.builder || models.finalReviewer)) {
+    const merged = {
+      ...desiredValue,
+      schemaVersion: 2,
+      profile: "engineering",
+      workflow: {
+        ...(desiredValue.workflow ?? {}),
+        models: {
+          planner: models.planner ?? desiredValue?.workflow?.models?.planner,
+          builder: models.builder ?? desiredValue?.workflow?.models?.builder,
+          finalReviewer: models.finalReviewer ?? desiredValue?.workflow?.models?.finalReviewer,
+        },
+        approval: {
+          mirrorToIssue: true,
+          maxFailedRounds: 3,
+          ...(desiredValue?.workflow?.approval ?? {}),
+        },
+      },
+    };
+    desiredValue = merged;
+  }
   const desiredJson = JSON.stringify(desiredValue, null, 2) + "\n";
   const desiredSha = bytesHashString(desiredJson);
   const kind = existing?.ok && forceOverwrite ? "update" : "create";

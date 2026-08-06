@@ -44,7 +44,7 @@
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "required": ["pointer", "strategy"],
+                  "required": ["pointer", "strategy", "scope", "installedSha256", "previous"],
                   "additionalProperties": false,
                   "properties": {
                     "pointer": { "type": "string", "pattern": "^/" },
@@ -53,6 +53,7 @@
                     "installedSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
                     "previous": {
                       "type": "object",
+                      "required": ["existed"],
                       "additionalProperties": true,
                       "properties": {
                         "existed": { "type": "boolean" },

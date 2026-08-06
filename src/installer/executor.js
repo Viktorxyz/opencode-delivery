@@ -53,7 +53,7 @@ async function gatherAllTargets(repoRoot) {
   return out;
 }
 
-export async function previewInstall({ rootPath, profile = null, replaceManaged, forceConfig, forceRootConfig }) {
+export async function previewInstall({ rootPath, profile = null, replaceManaged, forceConfig, forceRootConfig, models = null }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
@@ -79,6 +79,31 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     config: configValue,
     lock,
   });
+
+  // Fail-closed engineering: when the resolved profile is engineering,
+  // the synthesis must produce a V2 config with all three explicit
+  // models and the fixed approval policy. CLI overrides are merged
+  // last so the highest-precedence source wins.
+  if (resolved.profile === "engineering") {
+    const candidate = await planConfigSynthesis({
+      repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
+      migrationSeed: migrationReport?.proposedConfigSeed ?? null,
+      models,
+    });
+    if (candidate.kind === "create" || candidate.kind === "update") {
+      const configValue = candidate.configValue;
+      if (!configValue.workflow || !configValue.workflow.models) {
+        return { ok: false, error: { kind: "engineering-models-required", message: "engineering profile requires workflow.models.{planner,builder,finalReviewer}" } };
+      }
+      const { planner, builder, finalReviewer } = configValue.workflow.models;
+      if (!planner || !builder || !finalReviewer) {
+        return { ok: false, error: { kind: "engineering-models-required", message: "all three workflow.models.* are required" } };
+      }
+      if (!configValue.workflow.approval || !configValue.workflow.approval.mirrorToIssue || configValue.workflow.approval.maxFailedRounds !== 3) {
+        return { ok: false, error: { kind: "engineering-approval-required", message: "engineering profile requires workflow.approval.{mirrorToIssue:true, maxFailedRounds:3}" } };
+      }
+    }
+  }
 
   const previousProfile = lock?.manager?.profile ?? null;
   const isProfileTransition = previousProfile && previousProfile !== resolved.profile;

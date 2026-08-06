@@ -115,12 +115,20 @@ test("end-to-end: init --profile engineering writes the Plan Mode block into the
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
   // Init with engineering profile; force the root config so the
-  // Plan Mode block has somewhere to land.
+  // Plan Mode block has somewhere to land. The engineering profile
+  // requires explicit models; provide three of them so the
+  // fail-closed planner does not reject the install.
   const r = await runInit({
     json: true,
     rootPath: repoRoot,
     profile: "engineering",
     forceRootConfig: true,
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
   });
   assert.equal(r.exitCode, 0, r.stderr || r.stdout);
   // The consumer must have opencode.json after forceRootConfig.
@@ -153,6 +161,12 @@ test("end-to-end: engineering init adds Plan Mode permissions to an existing roo
     json: true,
     rootPath: repoRoot,
     profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
   });
   assert.equal(r.exitCode, 0, r.stderr || r.stdout);
 
@@ -184,6 +198,12 @@ test("end-to-end: engineering init does not overwrite existing Plan Mode permiss
     json: true,
     rootPath: repoRoot,
     profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
   });
   assert.equal(r.exitCode, 3, r.stderr || r.stdout);
 

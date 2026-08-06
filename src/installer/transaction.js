@@ -154,12 +154,22 @@ async function clearJournal(lockDir, txnId) {
 
 async function readJournal(lockDir, name) {
   const path = resolve(lockDir, name);
+  let raw;
   try {
-    const raw = await readFile(path, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
+    raw = await readFile(path, "utf8");
+  } catch (err) {
+    throw new Error(`transaction journal unreadable: ${path}: ${err?.message ?? err}`);
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`transaction journal malformed JSON: ${path}: ${err?.message ?? err}`);
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.ledger)) {
+    throw new Error(`transaction journal missing ledger: ${path}`);
+  }
+  return parsed;
 }
 
 async function isCommitted(journal) {
@@ -188,12 +198,12 @@ async function restoreEntry(entry) {
 }
 
 async function recoverJournal(lockDir, name) {
-  const journal = await readJournal(lockDir, name);
-  if (!journal) {
-    await unlink(resolve(lockDir, name)).catch(() => null);
-    return true;
+  let journal;
+  try {
+    journal = await readJournal(lockDir, name);
+  } catch (err) {
+    return { ok: false, error: err };
   }
-
   const committed = await isCommitted(journal);
   const entries = committed ? (journal.ledger ?? []) : [...(journal.ledger ?? [])].reverse();
   let complete = true;
@@ -206,7 +216,7 @@ async function recoverJournal(lockDir, name) {
     }
   }
   if (complete) await unlink(resolve(lockDir, name)).catch(() => null);
-  return complete;
+  return { ok: complete };
 }
 
 async function recover(repoRoot, lockDir) {
@@ -223,9 +233,15 @@ async function recover(repoRoot, lockDir) {
   }
   let totalRecovered = 0;
   let recoveryFailed = false;
+  let recoveryError = null;
   for (const name of journals) {
-    if (await recoverJournal(lockDir, name)) totalRecovered += 1;
-    else recoveryFailed = true;
+    const result = await recoverJournal(lockDir, name);
+    if (!result.ok) {
+      recoveryFailed = true;
+      if (result.error) recoveryError = result.error.message ?? String(result.error);
+    } else {
+      totalRecovered += 1;
+    }
   }
   await releaseLock(lockDir);
   return {
@@ -233,6 +249,7 @@ async function recover(repoRoot, lockDir) {
     recoveredCount: totalRecovered,
     blocked: recoveryFailed,
     reason: recoveryFailed ? "recovery-failed" : null,
+    recoveryError,
   };
 }
 
@@ -256,7 +273,7 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
     const kind = recovered.reason ?? "lock-held";
     const message = kind === "lock-held"
       ? "another opencode-ship transaction is active"
-      : "a previous opencode-ship transaction could not be recovered";
+      : `a previous opencode-ship transaction could not be recovered: ${recovered.recoveryError ?? "unknown error"}`;
     return { ok: false, error: { kind, message } };
   }
   const txnId = `txn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;

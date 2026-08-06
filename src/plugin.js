@@ -81,6 +81,42 @@ const toolDefs = [
   ["ship_status", "Read-only compact workflow state.", "status"],
 ];
 
+function wrapEnvelopeV2(id, result) {
+  if (result && typeof result === "object" && result.contractVersion === 2) {
+    return result;
+  }
+  if (result && typeof result === "object" && result.contractVersion === 1) {
+    const { contractVersion: _cv, ...rest } = result;
+    return {
+      contractVersion: 2,
+      ok: true,
+      kind: id,
+      operationId: `legacy-${Date.now().toString(36)}`,
+      idempotent: false,
+      data: rest,
+    };
+  }
+  if (result && typeof result === "object" && typeof result.kind === "string") {
+    return {
+      contractVersion: 2,
+      ok: false,
+      kind: id,
+      operationId: `legacy-${Date.now().toString(36)}`,
+      retryable: false,
+      message: result.kind,
+      details: result,
+    };
+  }
+  return {
+    contractVersion: 2,
+    ok: true,
+    kind: id,
+    operationId: `legacy-${Date.now().toString(36)}`,
+    idempotent: false,
+    data: result,
+  };
+}
+
 function makeTool(id, description, factory, runtime) {
   return tool({
     description,
@@ -88,7 +124,8 @@ function makeTool(id, description, factory, runtime) {
     async execute(args, ctx) {
       const runner = factory.build(runtime, ctx);
       const env = await runner(args);
-      return JSON.stringify(env, null, 2);
+      const wrapped = wrapEnvelopeV2(id, env);
+      return JSON.stringify(wrapped, null, 2);
     },
   });
 }

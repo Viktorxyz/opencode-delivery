@@ -28,7 +28,12 @@ async function operationsDir(repoRoot) {
   return join(opencodeShipStateDir(common), "github", "operations");
 }
 
+const SAFE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/;
+
 function operationPath(dir, operationId) {
+  if (!SAFE_ID_RE.test(operationId)) {
+    throw new Error(`invalid operationId: ${JSON.stringify(operationId)}`);
+  }
   return join(dir, `${operationId}.json`);
 }
 
@@ -85,6 +90,12 @@ export async function recordOperation(repoRoot, operationId, record) {
  * @returns {Promise<unknown>}
  */
 export async function readOperation(repoRoot, operationId) {
+  if (typeof operationId !== "string" || operationId.length === 0) {
+    return null;
+  }
+  if (!SAFE_ID_RE.test(operationId)) {
+    return null;
+  }
   const dir = await operationsDir(repoRoot);
   const path = operationPath(dir, operationId);
   if (!existsSync(path)) return null;

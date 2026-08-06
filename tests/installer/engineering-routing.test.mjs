@@ -153,6 +153,10 @@ test("Config V2: engineering with explicit models passes", async () => {
           builder: "minimax/MiniMax-M3",
           finalReviewer: "openai/gpt-5.6-sol",
         },
+        approval: {
+          mirrorToIssue: true,
+          maxFailedRounds: 3,
+        },
       },
     }));
     const r = await loadConfig(dir);

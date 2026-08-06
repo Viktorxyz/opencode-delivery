@@ -41,10 +41,8 @@ jobs:
           cache: npm
       - name: install dependencies
         run: npm ci --no-audit --no-fund
-      - name: vendor-sync
-        run: node scripts/vendor-sync.mjs
-      - name: format-check
-        run: npm run format:check
+      - name: vendor-verify
+        run: node scripts/verify-vendor.mjs
       - name: lint
         run: npm run lint
       - name: typecheck

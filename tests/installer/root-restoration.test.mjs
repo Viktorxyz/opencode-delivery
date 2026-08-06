@@ -101,11 +101,19 @@ test("engineering -> core removes the Plan Mode block and restores core pointer 
   const original = { agent: { build: { permission: { delivery_verify: "deny" } } } };
   await writeFile(rootPath, JSON.stringify(original, null, 2) + "\n");
   const { runInit } = await import("../../src/installer/commands/init.js");
-  // Install engineering first; the Plan Mode block lands.
+  // Install engineering first; the Plan Mode block lands. The
+  // engineering profile requires explicit models, so we must
+  // supply them or the fail-closed planner rejects the install.
   const eng = await runInit({
     json: true,
     rootPath: repoRoot,
     profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
   });
   assert.equal(eng.exitCode, 0, `engineering init: ${JSON.stringify(eng)}`);
   const afterEng = JSON.parse(readFileSync(rootPath, "utf8"));
@@ -150,6 +158,12 @@ test("uninstall restores the prior root pointer values byte-by-byte", async (t) 
     json: true,
     rootPath: repoRoot,
     profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
   });
   assert.equal(init.exitCode, 0, JSON.stringify(init));
   // After init, some pointers moved; the rest of the doc is preserved.
@@ -229,7 +243,17 @@ test("profile transition fails closed when an installer pointer has been edited"
   const rootPath = resolve(repoRoot, "opencode.json");
   await writeFile(rootPath, JSON.stringify({ agent: { build: { permission: { delivery_verify: "deny" } } } }, null, 2) + "\n");
   const { runInit } = await import("../../src/installer/commands/init.js");
-  const init = await captureStdout(() => runInit({ json: true, rootPath: repoRoot, profile: "engineering" }));
+  const init = await captureStdout(() => runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
+  }));
   assert.equal(init.result.exitCode, 0, init.output);
   // Simulate the user editing the Plan Mode permission block after
   // install. The recorded `installedSha256` no longer matches the
@@ -250,7 +274,17 @@ test("uninstall fails closed when an installer pointer has been edited", async (
   await writeFile(rootPath, JSON.stringify({ agent: { build: { permission: { delivery_verify: "deny" } } } }, null, 2) + "\n");
   const { runInit } = await import("../../src/installer/commands/init.js");
   const { runUninstall } = await import("../../src/installer/commands/uninstall.js");
-  const init = await captureStdout(() => runInit({ json: true, rootPath: repoRoot, profile: "engineering" }));
+  const init = await captureStdout(() => runInit({
+    json: true,
+    rootPath: repoRoot,
+    profile: "engineering",
+    forceConfig: true,
+    models: {
+      planner: "fake/strong-planner",
+      builder: "fake/cheap-builder",
+      finalReviewer: "fake/strong-reviewer",
+    },
+  }));
   assert.equal(init.result.exitCode, 0, init.output);
   // User edits the installer-owned pointer after install.
   const userEdit = JSON.parse(readFileSync(rootPath, "utf8"));

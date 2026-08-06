@@ -211,7 +211,6 @@ async function main() {
   }
   const manifest = {
     version: 1,
-    generatedAt: new Date().toISOString(),
     pins: { matt: MATT_PIN, superpowers: SUPER_PIN },
     sources,
   };

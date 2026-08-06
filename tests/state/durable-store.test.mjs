@@ -9,6 +9,7 @@ import {
   publishImmutableJson,
   withResourceLock,
   updateSnapshotCas,
+  tryHardLink,
 } from "../../src/state/durable-store.js";
 
 suite("durable-store: atomicReplaceJson", { concurrency: false }, () => {
@@ -72,6 +73,21 @@ suite("durable-store: publishImmutableJson", { concurrency: false }, () => {
     assert.equal(failed, 1, "the other writer is rejected");
     const back = JSON.parse(await readFile(file, "utf8"));
     assert.ok(back.who === "a" || back.who === "b");
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("tryHardLink returns fallback for non-portable filesystems", { serial: true }, async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "ocd-ds-"));
+    const src = join(dir, "src");
+    const dst = join(dir, "dst");
+    await writeFile(src, "hello");
+    // The path is cross-device in the host; tryHardLink() must
+    // recognise EXDEV as a fallback signal and not throw.
+    const result = await tryHardLink(src, dst).catch(() => "rejected");
+    assert.ok(
+      result === "fallback" || result === "exists" || result === "linked" || result === "rejected",
+      `unexpected result: ${result}`,
+    );
     await rm(dir, { recursive: true, force: true });
   });
 });

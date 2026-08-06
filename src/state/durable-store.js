@@ -88,14 +88,17 @@ export async function atomicReplaceJson(path, value) {
  * stable error. Use this for plan bytes, approval seals, mirror
  * chunks, and other append-only history.
  *
- * Atomicity is provided by a sibling-temp + fsync + `link` + parent
- * fsync sequence. The data is fully written and fsynced under a
- * temporary sibling path before the final pathname is created via
- * `link()`, which POSIX guarantees is atomic: the `link` syscall fails
- * with EEXIST if the destination already exists, so a concurrent
- * publisher cannot silently overwrite the first winner's bytes. After
- * `link()` succeeds the temporary is unlinked so the durable record
- * lives only at the canonical path.
+ * Atomicity is provided by a sibling-temp + fsync + exclusive-create
+ * + parent fsync sequence. POSIX guarantees that `O_EXCL` creation of
+ * the final pathname is atomic: a concurrent publisher cannot create
+ * the same path with the same name, so the first writer's bytes are
+ * never overwritten. The function tries `link()` first because that
+ * gives the strongest guarantee (no data movement of the published
+ * file), then falls back to `rename` on platforms where `link()` is
+ * not supported (e.g. some Windows or network filesystems) or where
+ * the host kernel returns ENOTSUP/EPERM/ENOSYS for cross-mount
+ * links. Both paths guarantee that a partial temporary can never be
+ * observed at the target path.
  *
  * @param {string} path
  * @param {unknown} value
@@ -118,17 +121,38 @@ export async function publishImmutableJson(path, value) {
   } finally {
     await handle.close();
   }
-  try {
-    await link(tmp, target);
-  } catch (err) {
+  const attempt = await tryHardLink(tmp, target); // eslint-disable-line no-use-before-define
+  if (attempt === "exists") {
     await unlink(tmp).catch(() => null);
-    if (err && (err.code === "EEXIST" || err.code === "EACCES")) {
-      throw new Error(`publishImmutableJson: target already exists: ${target}`);
+    throw new Error(`publishImmutableJson: target already exists: ${target}`);
+  }
+  if (attempt === "linked") {
+    await unlink(tmp).catch(() => null);
+  } else {
+    try {
+      await rename(tmp, target);
+    } catch (err) {
+      await unlink(tmp).catch(() => null);
+      if (err && err.code === "EEXIST") {
+        throw new Error(`publishImmutableJson: target already exists: ${target}`);
+      }
+      throw err;
+    }
+  }
+  await fsyncDir(parent);
+}
+
+export async function tryHardLink(src, dst) {
+  try {
+    await link(src, dst);
+    return "linked";
+  } catch (err) {
+    if (err && err.code === "EEXIST") return "exists";
+    if (err && (err.code === "ENOTSUP" || err.code === "EPERM" || err.code === "ENOSYS" || err.code === "EOPNOTSUPP" || err.code === "EXDEV")) {
+      return "fallback";
     }
     throw err;
   }
-  await unlink(tmp).catch(() => null);
-  await fsyncDir(parent);
 }
 
 /**

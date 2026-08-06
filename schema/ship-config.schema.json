@@ -181,7 +181,22 @@
         "required": ["profile"],
         "properties": { "profile": { "const": "engineering" } }
       },
-      "then": { "required": ["workflow"] }
+      "then": {
+        "required": ["workflow"],
+        "properties": {
+          "workflow": {
+            "required": ["models", "approval"],
+            "properties": {
+              "models": {
+                "required": ["planner", "builder", "finalReviewer"]
+              },
+              "approval": {
+                "required": ["mirrorToIssue", "maxFailedRounds"]
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
