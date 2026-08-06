@@ -1,20 +1,16 @@
 ---
 name: grill-with-docs
-description: Combine upstream grilling and domain-modeling to produce a durable paper trail before writing a spec.
-when_to_use: |
-  Use after triage and before `to-spec`. Captures the
-  requirements discussion, domain language, and ADR-shape
-  decisions in a single session so the spec step has the
-  material it needs.
+description: A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go.
+disable-model-invocation: true
 ---
 
-# Grill with docs
+Run a `/grilling` session, using the `/domain-modeling` skill.
 
-Thin wrapper that combines `grilling` and `domain-modeling` from
-the upstream Matt Pocock skills, with the consumer's domain
-and ADR paths configured by `setup-engineering-workflow`.
+## Ship integration
 
-This is a stub of the upstream
-`mattpocock/skills:grill-with-docs` behavior. Once vendored from
-`mattpocock/skills@<pinned-sha>`, the full SKILL.md replaces
-this file.
+This skill is part of the engineering profile shipped by
+`opencode-ship@1.0`. The strong planner child session is
+configured with `openai/gpt-5.6-sol` and the durable workflow
+state lives under `<git-common-dir>/opencode-ship/`. All
+GitHub mutations go through Ship's typed tools; never use
+`gh api` or raw shell.

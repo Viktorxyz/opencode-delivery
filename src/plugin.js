@@ -29,6 +29,21 @@ import {
   createReadyTool,
   createMergeTool,
   createCleanupTool,
+  createGithubReadTool,
+  createIssueCommentTool,
+  createIssueLabelsTool,
+  createIssueLinkTool,
+  createIssueCloseTool,
+  createSyncTool,
+  createPublishTool,
+  createPlanStartTool,
+  createPlanSubmitTool,
+  createPlanApproveTool,
+  createRunStartTool,
+  createTaskReportTool,
+  createTaskReviewTool,
+  createResumeTool,
+  createStatusTool,
 } from "./tools/index.js";
 import { recoverManifestAfterCrash } from "./recovery.js";
 import { reconcileOwner } from "./installer/plugin-owner.js";
@@ -49,7 +64,58 @@ const toolDefs = [
   ["delivery_ready", "Mark the PR ready after every required gate has passed.", "ready"],
   ["delivery_merge", "Squash merge the PR after an explicit user request.", "merge"],
   ["delivery_cleanup", "Remove the agent-owned worktree and branch after merge.", "cleanup"],
+  ["delivery_github_read", "Typed read of issue, PR, or check data.", "githubRead"],
+  ["delivery_issue_comment", "Idempotent typed comment on an issue.", "issueComment"],
+  ["delivery_issue_labels", "Idempotent label add/remove on an issue.", "issueLabels"],
+  ["delivery_issue_link", "Mark a relationship between two issues.", "issueLink"],
+  ["delivery_issue_close", "Close an issue with a recorded user permission subject.", "issueClose"],
+  ["delivery_sync", "Fetch and merge base into the feature branch.", "sync"],
+  ["delivery_publish", "Push the manifest branch to origin with HEAD verification.", "publish"],
+  ["ship_plan_start", "Create a workflow and dispatch the configured planner.", "planStart"],
+  ["ship_plan_submit", "Planner-only immutable PlanV2 submission.", "planSubmit"],
+  ["ship_plan_approve", "Interactive approval + immutable local seal.", "planApprove"],
+  ["ship_run_start", "Start execution of an approved plan.", "runStart"],
+  ["ship_task_report", "Builder-only immutable task report.", "taskReport"],
+  ["ship_task_review", "Task reviewer Spec/Quality verdict.", "taskReview"],
+  ["ship_resume", "Restore, reconcile, and continue idempotently.", "resume"],
+  ["ship_status", "Read-only compact workflow state.", "status"],
 ];
+
+function wrapEnvelopeV2(id, result) {
+  if (result && typeof result === "object" && result.contractVersion === 2) {
+    return result;
+  }
+  if (result && typeof result === "object" && result.contractVersion === 1) {
+    const { contractVersion: _cv, ...rest } = result;
+    return {
+      contractVersion: 2,
+      ok: true,
+      kind: id,
+      operationId: `legacy-${Date.now().toString(36)}`,
+      idempotent: false,
+      data: rest,
+    };
+  }
+  if (result && typeof result === "object" && typeof result.kind === "string") {
+    return {
+      contractVersion: 2,
+      ok: false,
+      kind: id,
+      operationId: `legacy-${Date.now().toString(36)}`,
+      retryable: false,
+      message: result.kind,
+      details: result,
+    };
+  }
+  return {
+    contractVersion: 2,
+    ok: true,
+    kind: id,
+    operationId: `legacy-${Date.now().toString(36)}`,
+    idempotent: false,
+    data: result,
+  };
+}
 
 function makeTool(id, description, factory, runtime) {
   return tool({
@@ -57,16 +123,9 @@ function makeTool(id, description, factory, runtime) {
     args: factory.args,
     async execute(args, ctx) {
       const runner = factory.build(runtime, ctx);
-      let env = await runner(args);
-      const taskId = typeof args?.taskId === "string" ? args.taskId : null;
-      if (env?.kind === "merge" && taskId) {
-        runtime.lastTaskId = taskId;
-        const result = await tryImmediateCleanup({
-          repoRoot: runtime.repoRoot, taskId, adapter: runtime.adapter,
-        }).catch((e) => ({ ok: false, reason: String(e?.message ?? e) }));
-        env = { ...env, cleanup: result };
-      }
-      return JSON.stringify(env, null, 2);
+      const env = await runner(args);
+      const wrapped = wrapEnvelopeV2(id, env);
+      return JSON.stringify(wrapped, null, 2);
     },
   });
 }
@@ -264,6 +323,207 @@ const factories = {
       owner: rt.owner,
       adapter: rt.adapter,
       remote: "origin",
+    }),
+  },
+  githubRead: {
+    args: {
+      resource: tool.schema.enum(["issue", "pr", "checks"]),
+      number: tool.schema.number().optional(),
+      sha: tool.schema.string().optional(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createGithubReadTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+      operationStore: { readOperation: async () => null },
+    }),
+  },
+  issueComment: {
+    args: {
+      number: tool.schema.number(),
+      body: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createIssueCommentTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  issueLabels: {
+    args: {
+      number: tool.schema.number(),
+      add: tool.schema.array(tool.schema.string()).optional(),
+      remove: tool.schema.array(tool.schema.string()).optional(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createIssueLabelsTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  issueLink: {
+    args: {
+      from: tool.schema.number(),
+      to: tool.schema.number(),
+      relationship: tool.schema.enum(["blocks", "is-blocked-by", "closes", "is-closed-by", "related"]),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createIssueLinkTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  issueClose: {
+    args: {
+      number: tool.schema.number(),
+      subject: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createIssueCloseTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  sync: {
+    args: {
+      base: tool.schema.string(),
+      branch: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createSyncTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  publish: {
+    args: {
+      taskId: tool.schema.string(),
+      expectedHead: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createPublishTool({
+      driver: rt.driver,
+      repoRoot: rt.repoRoot,
+      repoSlug: rt.repoSlug,
+      owner: rt.owner,
+    }),
+  },
+  planStart: {
+    args: {
+      issueNumber: tool.schema.number(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createPlanStartTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+      config: rt.configValue,
+    }),
+  },
+  planSubmit: {
+    args: {
+      workflowId: tool.schema.string(),
+      revision: tool.schema.number(),
+      plan: tool.schema.unknown(),
+      sha256: tool.schema.string().optional(),
+      submittedBy: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createPlanSubmitTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+    }),
+  },
+  planApprove: {
+    args: {
+      workflowId: tool.schema.string(),
+      revision: tool.schema.number(),
+      sha256: tool.schema.string(),
+      subject: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createPlanApproveTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+    }),
+  },
+  runStart: {
+    args: {
+      workflowId: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createRunStartTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+    }),
+  },
+  taskReport: {
+    args: {
+      workflowId: tool.schema.string(),
+      taskId: tool.schema.string(),
+      round: tool.schema.number(),
+      submittedBy: tool.schema.string(),
+      summary: tool.schema.string(),
+      changes: tool.schema.array(tool.schema.unknown()).optional(),
+      tests: tool.schema.array(tool.schema.unknown()).optional(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createTaskReportTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+      config: rt.configValue,
+    }),
+  },
+  taskReview: {
+    args: {
+      workflowId: tool.schema.string(),
+      taskId: tool.schema.string(),
+      round: tool.schema.number(),
+      submittedBy: tool.schema.string(),
+      spec: tool.schema.object({
+        verdict: tool.schema.enum(["pass", "none", "fail"]),
+        notes: tool.schema.string().optional(),
+      }),
+      quality: tool.schema.object({
+        verdict: tool.schema.enum(["pass", "none", "fail"]),
+        notes: tool.schema.string().optional(),
+      }),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createTaskReviewTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+    }),
+  },
+  resume: {
+    args: {
+      workflowId: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createResumeTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
+    }),
+  },
+  status: {
+    args: {
+      workflowId: tool.schema.string(),
+      operationId: tool.schema.string().optional(),
+    },
+    build: (rt) => createStatusTool({
+      repoRoot: rt.repoRoot,
+      owner: rt.owner,
     }),
   },
 };

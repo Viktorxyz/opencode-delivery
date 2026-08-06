@@ -15,6 +15,25 @@
 
 import { spawn } from "node:child_process";
 import { parseRepoSlug } from "./github.js";
+import { validateGhArgv } from "./github-command-policy.js";
+
+/**
+ * Typed surface of the production GitHub driver. Exposed here so
+ * downstream modules can JSDoc-import the driver shape without
+ * circular imports.
+ *
+ * @typedef {{
+ *   ensureIssue: (input: { repo: string; title: string; body: string; labels?: string[] }) => Promise<any>,
+ *   openDraftPullRequest: (input: { repo: string; head: string; base: string; title: string; body: string; issueNumber: number }) => Promise<any>,
+ *   updatePullRequestBody: (input: { repo: string; number: number; body: string }) => Promise<any>,
+ *   markReady: (input: { repo: string; number: number }) => Promise<any>,
+ *   mergePullRequest: (input: { repo: string; number: number; subject: string }) => Promise<any>,
+ *   readPullRequest: (input: { repo: string; number: number }) => Promise<any>,
+ *   readChecks: (input: { repo: string; sha?: string; number?: number; branch?: string; required?: string[] }) => Promise<any[]>,
+ *   comment: (input: { repo: string; number: number; body: string }) => Promise<any>,
+ *   refreshHead: (input: { repo: string; number: number }) => Promise<any>,
+ * }} GhDriver
+ */
 
 function defaultRunner(cwd, env) {
   return (args) =>
@@ -299,6 +318,26 @@ export function createGhDriver(opts = {}) {
         "headRefOid",
       ]);
       return fields.headRefOid;
+    },
+
+    async runCommand(argv) {
+      // Production gh command gateway. Every command must pass the
+      // argv allowlist policy; the runner is the same spawn helper
+      // used by the typed methods, so credential and cwd handling
+      // stay consistent. The argv must be a normalised array, not a
+      // string, so shell injection is structurally impossible.
+      if (!Array.isArray(argv) || argv.length === 0) {
+        throw new Error("runCommand: argv must be a non-empty array");
+      }
+      if (typeof argv[0] !== "string" || argv[0].length === 0) {
+        throw new Error("runCommand: argv[0] must be a non-empty string");
+      }
+      const policy = validateGhArgv(argv);
+      if (!policy.ok) {
+        throw new Error(`runCommand: rejected by policy: ${policy.reason}`);
+      }
+      const r = await run(argv);
+      return r;
     },
   };
 }

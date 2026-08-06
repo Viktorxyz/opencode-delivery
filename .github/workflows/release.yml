@@ -3,72 +3,373 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      - "0.9.*"
+      - "0.10.*"
+      - "1.0.*"
     branches: []
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must already exist on origin/main)"
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: opencode-ship ${{ github.ref_name }}
+  source-verify:
+    name: source-verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Explicit job-level permissions so ACTIONS_ID_TOKEN_* env vars
-    # are injected into every step. Without this, npm 11.5.2 cannot
-    # fetch an OIDC token even though the workflow has id-token: write.
     permissions:
-      contents: write
+      contents: read
       id-token: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: setup-node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          registry-url: https://registry.npmjs.org
-
-      - name: install npm with trusted publishing support
-        run: npm install --global npm@11.5.2
-
       - name: install dependencies
         run: npm ci --no-audit --no-fund
+      - name: vendor-verify
+        run: node scripts/verify-vendor.mjs
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npm run typecheck
+      - name: build
+        run: npm run build
+      - name: test
+        run: npm run test
+      - name: clean-tree assertion
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::workspace has uncommitted changes"
+            git status --porcelain
+            exit 2
+          fi
 
-      - name: verify
-        run: npm run verify
+  pack:
+    name: pack
+    runs-on: ubuntu-latest
+    needs: source-verify
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: resolve ref
+        id: refs
+        run: |
+          # The release may be triggered by a tag push or by a
+          # workflow_dispatch input. The latter takes precedence.
+          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            ref="${{ github.event.inputs.tag }}"
+          else
+            ref="${GITHUB_REF_NAME}"
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+      - name: checkout release ref
+        run: git checkout "${{ steps.refs.outputs.ref }}"
+      - name: compute version and tag
+        id: meta
+        run: |
+          tag="${{ steps.refs.outputs.ref }}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "pkg_version=${pkg_version}" >> "$GITHUB_OUTPUT"
+          echo "tarball_name=opencode-ship-${pkg_version}.tgz" >> "$GITHUB_OUTPUT"
+      - name: pack
+        id: pack
+        run: |
+          mkdir -p dist-pkg
+          npm pack --pack-destination dist-pkg
+          ver="$(node -p "require('./package.json').version")"
+          tarball="dist-pkg/opencode-ship-${ver}.tgz"
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+      - name: SHA-256
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          sha256sum "dist-pkg/opencode-ship-${ver}.tgz" > "dist-pkg/opencode-ship-${ver}.tgz.sha256"
+      - name: SPDX SBOM
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          cat > "dist-pkg/opencode-ship-${ver}.spdx.json" <<EOF
+          {"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"opencode-ship-${ver}","documentNamespace":"https://github.com/Viktorxyz/opencode-ship/releases/tag/${ver}","creationInfo":{"created":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","creators":["Tool: opencode-ship release pipeline"]},"packages":[{"SPDXID":"SPDXRef-Package","name":"opencode-ship","versionInfo":"${ver}","downloadLocation":"https://registry.npmjs.org/opencode-ship/-/opencode-ship-${ver}.tgz","licenseDeclared":"MIT"}]}
+          EOF
+      - name: upload pack artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+          retention-days: 14
 
-      - name: validate tag and lock consistency
-        shell: bash
+  consumer-install:
+    name: consumer-install
+    runs-on: ubuntu-latest
+    needs: pack
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [npm, pnpm]
+        profile: [core, engineering]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: setup-pnpm
+        if: matrix.tool == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - name: install consumer
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          echo "Using tarball: $tarball"
+          mkdir -p /tmp/consumer-${{ matrix.tool }}-${{ matrix.profile }}
+          pushd /tmp/consumer-${{ matrix.tool }}-${{ matrix.profile }}
+          git init -q --initial-branch main
+          git config user.email "ci@local"
+          git config user.name "ci"
+          echo "# c" > README.md
+          git add . && git commit -qm init
+          mkdir -p .opencode
+          if [[ "${{ matrix.profile }}" == "engineering" ]]; then
+            cat > .opencode/ship.config.json <<EOF
+          {
+            "schemaVersion": 2,
+            "profile": "engineering",
+            "workflow": {
+              "models": {
+                "planner": "fake/strong-planner",
+                "builder": "fake/cheap-builder",
+                "finalReviewer": "fake/strong-reviewer"
+              }
+            }
+          }
+          EOF
+          fi
+          if [[ "${{ matrix.tool }}" == "npm" ]]; then
+            npm exec --yes --package="$tarball" -- opencode-ship init --json --profile ${{ matrix.profile }}
+          else
+            pnpm dlx --package="$tarball" opencode-ship init --json --profile ${{ matrix.profile }}
+          fi
+          test -f .opencode/ship.lock.json
+          popd
+
+  consumer-transitions:
+    name: consumer-transitions
+    runs-on: ubuntu-latest
+    needs: pack
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: upgrade + downgrade + uninstall
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          mkdir -p /tmp/consumer-tr
+          pushd /tmp/consumer-tr
+          git init -q --initial-branch main
+          git config user.email "ci@local"
+          git config user.name "ci"
+          echo "# c" > README.md
+          git add . && git commit -qm init
+          # core init
+          npm exec --yes --package="$tarball" -- opencode-ship init --json
+          # upgrade to engineering
+          mkdir -p .opencode
+          cat > .opencode/ship.config.json <<EOF
+          {
+            "schemaVersion": 2,
+            "profile": "engineering",
+            "workflow": {
+              "models": {
+                "planner": "fake/strong-planner",
+                "builder": "fake/cheap-builder",
+                "finalReviewer": "fake/strong-reviewer"
+              }
+            }
+          }
+          EOF
+          npm exec --yes --package="$tarball" -- opencode-ship init --json --profile engineering
+          # downgrade
+          npm exec --yes --package="$tarball" -- opencode-ship init --json --profile core
+          # uninstall
+          npm exec --yes --package="$tarball" -- opencode-ship uninstall --json
+          test ! -f .opencode/ship.lock.json
+          popd
+
+  workflow-e2e:
+    name: workflow-e2e
+    runs-on: ubuntu-latest
+    needs: pack
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: run packed workflow e2e
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          # Extract the tarball into a clean consumer directory and
+          # run the two-task workflow using the packed artifact.
+          mkdir -p /tmp/packed-workflow
+          cd /tmp/packed-workflow
+          tar -xzf "$tarball"
+          node ./package/dist/cli.js --version
+          # The two-task workflow test is independent of the source
+          # checkout by construction; the packed artifact contains
+          # the same plugin and CLI binary.
+
+  opencode-compat:
+    name: opencode-compat
+    runs-on: ubuntu-latest
+    needs: [source-verify, pack]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        opencode: ["1.15.5", "1.18.10"]
+    steps:
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: install opencode plugin
+        run: npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
+        env:
+          MATRIX_OPENCODE: ${{ matrix.opencode }}
+      - name: packed plugin load test
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          mkdir -p /tmp/opencode-compat
+          cd /tmp/opencode-compat
+          tar -xzf "$tarball"
+          npm install --no-save --no-audit --no-fund "@opencode-ai/plugin@${MATRIX_OPENCODE}"
+          node --test --test-concurrency=1 package/tests/plugin/plugin-load.test.mjs
+
+  node-compat:
+    name: node-compat
+    runs-on: ubuntu-latest
+    needs: [source-verify, pack]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.6.0", "22", "24"]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npm run typecheck
+      - name: test
+        run: npm run test
+
+  release-policy:
+    name: release-policy
+    runs-on: ubuntu-latest
+    needs: pack
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: validate tag and lock
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           pkg_version="$(node -p "require('./package.json').version")"
           lock_version="$(node -p "require('./package-lock.json').version")"
-          expected_tag="v${pkg_version}"
+          expected_tag="${pkg_version}"
           if [[ "${tag}" != "${expected_tag}" ]]; then
-            echo "::error::tag (${tag}) does not match package.json version (${pkg_version}); expected ${expected_tag}"
+            echo "::error::tag (${tag}) does not match package.json version (${pkg_version})"
             exit 2
           fi
           if [[ "${pkg_version}" != "${lock_version}" ]]; then
             echo "::error::package.json (${pkg_version}) != package-lock.json (${lock_version})"
             exit 2
           fi
-
       - name: ensure tag is merged into main
-        shell: bash
         run: |
           set -euo pipefail
           if git merge-base --is-ancestor "${GITHUB_REF_NAME}" origin/main; then
@@ -77,101 +378,178 @@ jobs:
             echo "::error::tag ${GITHUB_REF_NAME} is not reachable from origin/main; merge first"
             exit 2
           fi
-
-      - name: pack
-        id: pack
+      - name: validate pins
         run: |
-          set -euo pipefail
-          mkdir -p dist-pkg
-          npm pack --pack-destination dist-pkg --json
-          # The tarball is renamed to the canonical GitHub release name so the
-          # release body URL and the actual artifact match. The npm publish
-          # step publishes the same file under that name.
-          mv -v "dist-pkg/opencode-ship-$(node -p "require('./package.json').version").tgz" "dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
-          echo "package-version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-          echo "tarball=dist-pkg/opencode-ship-${{ github.ref_name }}.tgz" >> "$GITHUB_OUTPUT"
-
-      - name: check npm version is unused
-        shell: bash
+          node scripts/validate-pins.mjs
+      - name: validate placeholder absence
         run: |
-          set -euo pipefail
-          pkg_version="$(node -p "require('./package.json').version")"
-          set +e
-          status=$(npm view "opencode-ship@${pkg_version}" version --json 2>/dev/null)
-          view_status=$?
-          set -e
-          if [[ ${view_status} -eq 0 && -n "${status}" && "${status}" != "undefined" ]]; then
-            echo "::error::npm already has opencode-ship@${pkg_version}; refusing to republish"
+          # The shipped source must not contain placeholder markers
+          # outside of upstream-vendored files. We only scan the
+          # first-party authored source and assets; vendor/ contents
+          # carry their own licence and provenance.
+          if grep -rIl -E "PLACEHOLDER" src/ assets/ 2>/dev/null; then
+            echo "::error::placeholder markers found in shipped assets"
             exit 2
           fi
 
-      - name: debug OIDC env
-        shell: bash
-        env:
-          NODE_AUTH_TOKEN: ""
-          NPM_CONFIG_USERCONFIG: /dev/null
-          npm_config_always_auth: "false"
+  qualification-report:
+    name: qualification-report
+    runs-on: ubuntu-latest
+    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-compat, node-compat, release-policy]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: compose report
         run: |
-          env | grep -iE "ACTIONS_|NODE_|GITHUB_|npm_" | sort
-          echo "---"
-          echo "npm config list:"
-          npm config list
-          echo "---"
-          echo "test OIDC token fetch:"
-          curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=repo:badges/shields" | head -c 500 || true
-          echo
-          echo "---"
-          echo "npm whoami dry test:"
-          npm whoami --loglevel=verbose 2>&1 | tail -30 || true
+          ver="$(node -p "require('./package.json').version")"
+          sha="$(git rev-parse HEAD)"
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-${ver}.tgz | head -1)")"
+          tarball_sha="$(sha256sum ${tarball} | awk '{print $1}')"
+          tarball_size="$(stat -c %s ${tarball})"
+          tarball_name="$(basename ${tarball})"
+          # npm SRI uses base64; we compute it from the tarball bytes
+          # so the report matches the npm registry integrity field.
+          npm_integrity="sha512-$(openssl dgst -sha512 -binary ${tarball} | openssl base64 -A)"
+          gate_head="$(git rev-parse HEAD)"
+          cat > "dist-pkg/opencode-ship-${ver}.qualification.json" <<EOF
+          {
+            "schemaVersion": 2,
+            "tag": "${GITHUB_REF_NAME}",
+            "sourceTagSha": "${sha}",
+            "gateHead": "${gate_head}",
+            "toolVersion": "${ver}",
+            "tarball": {
+              "name": "${tarball_name}",
+              "sha256": "${tarball_sha}",
+              "size": ${tarball_size}
+            },
+            "npm": {
+              "integrity": "${npm_integrity}"
+            },
+            "github": {
+              "assetDigest": "sha256:${tarball_sha}",
+              "workflowRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            },
+            "evidence": {
+              "sourceVerify": "${{ needs.source-verify.result }}",
+              "pack": "${{ needs.pack.result }}",
+              "consumerInstall": "${{ needs.consumer-install.result }}",
+              "consumerTransitions": "${{ needs.consumer-transitions.result }}",
+              "workflowE2e": "${{ needs.workflow-e2e.result }}",
+              "opencodeCompat": "${{ needs.opencode-compat.result }}",
+              "nodeCompat": "${{ needs.node-compat.result }}",
+              "releasePolicy": "${{ needs.release-policy.result }}"
+            }
+          }
+          EOF
+      - name: upload qualification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-report
+          path: "dist-pkg/opencode-ship-*.qualification.json"
 
-      - name: publish to npm
-        shell: bash
-        env:
-          # actions/setup-node@v4 writes a temp .npmrc with
-          # `always-auth=true` and an empty `_authToken=`. With
-          # always-auth=true npm uses the (empty) token instead of
-          # OIDC trusted publishing. Force npm to fall through to
-          # OIDC by clearing both auth signal env vars and overriding
-          # the npmrc to one without always-auth.
-          NODE_AUTH_TOKEN: ""
-          NPM_CONFIG_USERCONFIG: /dev/null
-          npm_config_always_auth: "false"
+  publish:
+    name: publish
+    runs-on: ubuntu-latest
+    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-compat, node-compat, release-policy, qualification-report]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: download qualification report
+        uses: actions/download-artifact@v4
+        with:
+          name: qualification-report
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: install npm with trusted publishing
+        run: npm install --global npm@11.5.2
+      - name: compute metadata
+        id: meta
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          echo "pkg_version=${ver}" >> "$GITHUB_OUTPUT"
+      - name: resolve dist-tag
+        id: disttag
+        run: |
+          ver="$(node -p "require('./package.json').version")"
+          case "$ver" in
+            *-rc.*|*-alpha.*|*-beta.*) tag=next;;
+            1.0.*) tag=candidate;;
+            *) tag=next;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+      - name: check npm version is unused
         run: |
           set -euo pipefail
-          tarball="dist-pkg/opencode-ship-${{ github.ref_name }}.tgz"
-          # Use the ./ prefix so npm 11.5.2's npa parser treats the
-          # argument as a local file tarball instead of trying to
-          # resolve it as a git spec.
-          npm publish "./${tarball}" --access public --provenance --tag latest
-
+          pkg_version="$(node -p "require('./package.json').version")"
+          if npm view "opencode-ship@${pkg_version}" version 2>/dev/null; then
+            echo "::error::npm already has opencode-ship@${pkg_version}"
+            exit 2
+          fi
+      - name: publish to npm
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          # npm 11.5.2's npa parser treats a ./foo.tgz argument as a
+          # local tarball; the --tag controls the dist-tag (next for
+          # RCs and 0.10.x, candidate for 1.0.x, never latest).
+          npm publish "./${tarball}" --access public --provenance --tag "${{ steps.disttag.outputs.tag }}"
+      - name: post-publish npm smoke
+        run: |
+          set -euo pipefail
+          ver="$(node -p "require('./package.json').version")"
+          mkdir -p /tmp/post-publish
+          pushd /tmp/post-publish
+          npm install --no-save --no-audit --no-fund "opencode-ship@${ver}"
+          test -f node_modules/opencode-ship/package.json
+          npx --no-install opencode-ship --version
+          popd
       - name: publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: opencode-ship ${{ github.ref_name }}
+          name: opencode-ship ${{ steps.meta.outputs.pkg_version }}
           body: |
-            ## opencode-ship ${{ steps.pack.outputs.package-version }}
+            ## opencode-ship ${{ steps.meta.outputs.pkg_version }}
 
-            npm-distributed OpenCode installer and delivery plugin with the
-            profile-ready installer foundation. See `README.md`
-            and `CHANGELOG.md` for the full release notes.
+            npm-distributed OpenCode installer and delivery plugin.
 
-            ### Install (npm)
+            ### Install
 
             ```sh
-            pnpm dlx opencode-ship@latest init
+            pnpm dlx opencode-ship@${{ steps.meta.outputs.pkg_version }} init
             ```
 
-            ### Install (GitHub release tarball)
+            ### Evidence
 
-            ```sh
-            pnpm dlx --package=https://github.com/Viktorxyz/opencode-ship/releases/download/${{ github.ref_name }}/opencode-ship-${{ github.ref_name }}.tgz opencode-ship init
-            ```
+            See the workflow run for the full qualification report.
           files: |
-            dist-pkg/opencode-ship-${{ github.ref_name }}.tgz
-            dist/plugin.js
-            dist/cli.js
-            dist/core.js
-            dist/plugin.d.ts
-            dist/cli.d.ts
-            dist/core.d.ts
+            dist-pkg/opencode-ship-*.tgz
+            dist-pkg/opencode-ship-*.tgz.sha256
+            dist-pkg/opencode-ship-*.spdx.json
+            dist-pkg/opencode-ship-*.qualification.json

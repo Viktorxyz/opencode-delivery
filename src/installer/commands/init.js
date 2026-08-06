@@ -26,10 +26,17 @@ export async function runInit(options) {
     replaceManaged: false,
     forceConfig: Boolean(options.forceConfig),
     forceRootConfig: Boolean(options.forceRootConfig),
+    models: options.models ?? null,
   });
   if (!preview.ok) {
     if (preview.error?.kind === "unsupported-lock-schema") {
       return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json, "init");
+    }
+    if (preview.error?.kind === "engineering-models-required") {
+      return emitFailure(2, preview.error.message, options.json, "init");
+    }
+    if (preview.error?.kind === "engineering-approval-required") {
+      return emitFailure(2, preview.error.message, options.json, "init");
     }
     if (preview.error?.kind === "lock-invalid") {
       return emitFailure(3, `lock invalid: ${(preview.error.issues ?? []).join("; ")}`, options.json, "init");

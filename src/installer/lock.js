@@ -24,7 +24,7 @@ import { bytesHashString } from "./hash.js";
 import { stableStringify } from "./json-pointer.js";
 import { DEFAULT_PROFILE, isValidProfile } from "../profile.js";
 
-export const CURRENT_LOCK_SCHEMA = 2;
+export const CURRENT_LOCK_SCHEMA = 3;
 
 /**
  * Lock schema revisions:
@@ -35,6 +35,13 @@ export const CURRENT_LOCK_SCHEMA = 2;
  *       newly written locks and validated to be one of PROFILES.
  *       v1 locks still validate (legacy core) so consumers on
  *       earlier versions can upgrade without manual migration.
+ *   3 - reversible profile schema: every root pointer record
+ *       carries a `scope` (core | engineering), the
+ *       `previous` value is preserved across updates so uninstall
+ *       can byte-restore the preinstall root, the transaction
+ *       covers lock deletion, and engineering-to-core downgrades
+ *       remove engineering-scoped pointers and Plan Mode. v1 and
+ *       v2 locks still validate so existing consumers can upgrade.
  */
 export function lockSchemaRevision() {
   return CURRENT_LOCK_SCHEMA;
@@ -107,12 +114,13 @@ export function validateLock(rawLock) {
 
   // v1 locks (legacy manager-aware schema) are accepted as legacy
   // core so consumers on those versions can upgrade without manual
-  // migration. v2+ locks must match the current schema.
+  // migration. v2/v3 locks must match the current schema family.
   if (
     rawLock.contractVersion !== CURRENT_LOCK_SCHEMA &&
-    rawLock.contractVersion !== 1
+    rawLock.contractVersion !== 1 &&
+    rawLock.contractVersion !== 2
   ) {
-    issues.push(`unsupported contractVersion: ${JSON.stringify(rawLock.contractVersion)} (expected ${CURRENT_LOCK_SCHEMA} or 1)`);
+    issues.push(`unsupported contractVersion: ${JSON.stringify(rawLock.contractVersion)} (expected ${CURRENT_LOCK_SCHEMA}, 2, or 1)`);
     kind = "schema";
   }
 
@@ -125,21 +133,20 @@ export function validateLock(rawLock) {
     kind = kind === "ok" ? "shape" : kind;
   } else if (
     manager.schemaVersion !== CURRENT_LOCK_SCHEMA &&
+    manager.schemaVersion !== 2 &&
     manager.schemaVersion !== 1
   ) {
-    issues.push(`unsupported manager.schemaVersion: ${JSON.stringify(manager.schemaVersion)} (expected ${CURRENT_LOCK_SCHEMA} or 1)`);
+    issues.push(`unsupported manager.schemaVersion: ${JSON.stringify(manager.schemaVersion)} (expected ${CURRENT_LOCK_SCHEMA}, 2, or 1)`);
     kind = "schema";
   } else if (manager.name !== "opencode-ship") {
     issues.push(`unknown manager.name: ${JSON.stringify(manager.name)}`);
     kind = "shape";
   } else if (
-    rawLock.contractVersion === CURRENT_LOCK_SCHEMA &&
-    manager.schemaVersion === CURRENT_LOCK_SCHEMA &&
+    rawLock.contractVersion >= 2 &&
+    manager.schemaVersion >= 2 &&
     manager.profile !== undefined &&
     !isValidProfile(manager.profile)
   ) {
-    // v2 locks must carry a valid profile. v1 locks (where the
-    // profile field is absent) implicitly resolve to core.
     issues.push(`invalid manager.profile: ${JSON.stringify(manager.profile)} (expected one of: core, engineering)`);
     kind = "shape";
   }

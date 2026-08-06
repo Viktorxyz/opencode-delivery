@@ -19,6 +19,7 @@ import { CATALOG, filterCatalogByProfile, TEMPLATE_SET_ID } from "./catalog.js";
 import { PACKAGE_VERSION } from "../version.js";
 import {
   planFileInstall,
+  planStaleFileRemoval,
   planMigrationCleanup,
   planConfigSynthesis,
   planRootConfigApply,
@@ -52,7 +53,7 @@ async function gatherAllTargets(repoRoot) {
   return out;
 }
 
-export async function previewInstall({ rootPath, profile = null, replaceManaged, forceConfig, forceRootConfig }) {
+export async function previewInstall({ rootPath, profile = null, replaceManaged, forceConfig, forceRootConfig, models = null }) {
   const detection = detectProject(rootPath ?? process.cwd());
   if (detection.errors.some((e) => e.kind === "not-a-git-repo")) {
     return { ok: false, error: { kind: "invalid-project", errors: detection.errors } };
@@ -79,18 +80,49 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     lock,
   });
 
-  // Slice 1/12: every current entry ships in both profiles, so
-  // engineering and core produce the same plan for now. Once Matt
-  // + Superpowers workflow assets are added in later slices, those
-  // entries will declare `profiles: ["engineering"]` and the
-  // filter below will hide them from `init --profile core`.
+  // Fail-closed engineering: when the resolved profile is engineering,
+  // the synthesis must produce a V2 config with all three explicit
+  // models and the fixed approval policy. CLI overrides are merged
+  // last so the highest-precedence source wins.
+  if (resolved.profile === "engineering") {
+    const candidate = await planConfigSynthesis({
+      repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
+      migrationSeed: migrationReport?.proposedConfigSeed ?? null,
+      models,
+    });
+    if (candidate.kind === "create" || candidate.kind === "update") {
+      const configValue = candidate.configValue;
+      if (!configValue.workflow || !configValue.workflow.models) {
+        return { ok: false, error: { kind: "engineering-models-required", message: "engineering profile requires workflow.models.{planner,builder,finalReviewer}" } };
+      }
+      const { planner, builder, finalReviewer } = configValue.workflow.models;
+      if (!planner || !builder || !finalReviewer) {
+        return { ok: false, error: { kind: "engineering-models-required", message: "all three workflow.models.* are required" } };
+      }
+      if (!configValue.workflow.approval || !configValue.workflow.approval.mirrorToIssue || configValue.workflow.approval.maxFailedRounds !== 3) {
+        return { ok: false, error: { kind: "engineering-approval-required", message: "engineering profile requires workflow.approval.{mirrorToIssue:true, maxFailedRounds:3}" } };
+      }
+    }
+  }
+
+  const previousProfile = lock?.manager?.profile ?? null;
+  const isProfileTransition = previousProfile && previousProfile !== resolved.profile;
+
+  // The active catalog is the set of files the new profile ships.
+  // A profile transition must also remove files that the new
+  // profile no longer ships but the previous profile did; this is
+  // the engineering -> core cleanup.
   const activeCatalog = filterCatalogByProfile(CATALOG, resolved.profile);
+  const staleCatalog = isProfileTransition
+    ? filterCatalogByProfile(CATALOG, previousProfile).filter((e) => !activeCatalog.includes(e))
+    : [];
 
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
     migrationSeed: migrationReport?.proposedConfigSeed ?? null,
   });
   const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged), catalog: activeCatalog });
+  const staleFilePlan = await planStaleFileRemoval({ repoRoot, lock, staleCatalog });
   const migrationPlan = await planMigrationCleanup({
     repoRoot,
     lock,
@@ -102,11 +134,11 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
   // it; the active-profile gate is the same precedence chain as
   // the file install.
   const planMode = resolved.profile === "engineering"
-    ? { id: "/agent/plan/permission", block: planModePermissions().build }
+    ? { id: "/agent/plan/permission", block: planModePermissions().build, scope: "engineering" }
     : null;
   const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig), planMode });
 
-  const plan = [...(filePlan ?? []), ...migrationPlan, configPlan, rootPlan];
+  const plan = [...(filePlan ?? []), ...staleFilePlan, ...migrationPlan, configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
   const summary = summarise(plan);
   return {
@@ -115,6 +147,8 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     detection,
     lock,
     profile: resolved,
+    previousProfile,
+    isProfileTransition,
     plan,
     conflicts,
     summary,

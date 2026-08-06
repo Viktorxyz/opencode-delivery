@@ -47,6 +47,7 @@
     "assets",
     "schema",
     "docs",
+    "vendor",
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",

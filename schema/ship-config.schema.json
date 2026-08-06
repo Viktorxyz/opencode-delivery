@@ -6,7 +6,7 @@
   "required": ["schemaVersion"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schemaVersion": { "enum": [1, 2] },
     "profile": {
       "type": "string",
       "enum": ["core", "engineering"],
@@ -136,6 +136,67 @@
         "agentsDir": { "type": "string", "pattern": "^\\.opencode/agents/?$" },
         "skillsDir": { "type": "string", "pattern": "^\\.opencode/skills/?$" }
       }
+    },
+    "workflow": {
+      "type": "object",
+      "description": "Required when profile is engineering. Ignored when profile is core.",
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["planner", "builder", "finalReviewer"],
+          "properties": {
+            "planner": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+              "description": "Provider/model id for the strong planning child session."
+            },
+            "builder": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+              "description": "Provider/model id for the cheap builder child session."
+            },
+            "finalReviewer": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+              "description": "Provider/model id for the final Standards + Spec reviewers."
+            }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mirrorToIssue": { "const": true },
+            "maxFailedRounds": { "const": 3 }
+          }
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["profile"],
+        "properties": { "profile": { "const": "engineering" } }
+      },
+      "then": {
+        "required": ["workflow"],
+        "properties": {
+          "workflow": {
+            "required": ["models", "approval"],
+            "properties": {
+              "models": {
+                "required": ["planner", "builder", "finalReviewer"]
+              },
+              "approval": {
+                "required": ["mirrorToIssue", "maxFailedRounds"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -2,6 +2,102 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## Unreleased
+
+- The `release/1.0-completion` branch contains the complete
+  production runtime for the planned `0.10.0` release. No
+  `0.10.0` or `1.0.0` has been published; consumers should keep
+  using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0`
+  tags are placeholders only and must not be pushed.
+- See `RELEASING.md` for the operational runbook and
+  `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json`
+  for the authoritative task state.
+
+### Shipped source on `release/1.0-completion` (not yet released)
+
+These changes are present in source on the
+`release/1.0-completion` branch but are not production-ready
+until the formal registry dogfood on the npm-published `0.10.0`
+succeeds. Items will move to a dated release header only after
+that step completes.
+
+- Crash-safe Git-common storage: link()-based atomic publication
+  with rename() fallback, SHA-256 hashed resource locks, explicit
+  legacy migration from the `opencode-delivery/` path to
+  `opencode-ship/delivery/`, fail-closed transaction recovery.
+- Fail-closed profile transitions and uninstall: pointer
+  `installedSha256` verification refuses to overwrite user edits;
+  transactional `--purge-config`; doctor's installed-hash and
+  root-pointer checks are scoped to the active profile.
+- Engineering profile requires explicit
+  `workflow.models.{planner,builder,finalReviewer}` and
+  `workflow.approval.{mirrorToIssue:true, maxFailedRounds:3}`
+  before any write; CLI `--planner-model`/`--builder-model`/
+  `--final-reviewer-model` flags are forwarded into the
+  planner.
+- Real upstream vendoring: 24 SKILL.md files plus companion
+  files from the pinned
+  `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`
+  and `obra/superpowers@44c9b2d6e889982ac18c27d05a19fefe335194e1`
+  commits, frozen byte-identical under `vendor/upstreams/`.
+  `scripts/verify-vendor.mjs` is the read-only CI verifier.
+- Config V2 schema with allOf enforcement; lock V3 schema
+  requires scope, installedSha256, and previous for every
+  pointer.
+- 24 typed tools: 9 existing delivery tools + 7 Git/GitHub
+  control-plane tools + 8 workflow tools (`ship_plan_*`,
+  `ship_run_*`, `ship_task_*`, `ship_resume`, `ship_status`).
+  The plugin wraps V1 envelopes at the boundary so every tool
+  returns contract-version-2.
+- Contract-version-2 envelope + immutable GitHub operation
+  store with safe-id operationId validation.
+- Deterministic run reducer + controller with hash-chained
+  events and commit trailers.
+- Per-run resume lock + crash reconciliation + mirror
+  restoration.
+- Same-HEAD gate across final Standards/Spec reviews,
+  verification, CI, PR, and Ready.
+- Agent permissions: controller permission block removes raw
+  `gh`, push, reset, stash, worktree remove, tag, and
+  self-review/approvals.
+- Two-task workflow qualification with fake GitHub/model
+  harness.
+- Ten-job release qualification pipeline
+  (`.github/workflows/release.yml`): source-verify, pack,
+  consumer-install (npm x pnpm x core x engineering), consumer-
+  transitions, workflow-e2e, opencode-compat (matrix 1.15.5 +
+  1.18.10), node-compat (matrix 22.6.0 + 22 + 24), release-
+  policy, qualification-report, publish.
+- `publish` uses `--tag next` for 0.10.x RCs and stable,
+  `--tag candidate` for 1.0.x. Post-publish npm install
+  smoke verifies the registry artifact.
+- SP DX 2.3 SBOM, base64 npm integrity, and sha256:hex asset
+  digest in the qualification report.
+
+### Planned (not yet shipped)
+
+These changes are present in source on the `release/1.0-completion` branch but are not production-ready and have not been published. Items will move to a dated release header only after the relevant plan task is verified end-to-end and the formal registry dogfood passes.
+
+- Lock schema v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
+- `src/state/git-common-dir.js` and `src/state/durable-store.js` for the shared crash-safe storage under the resolved Git common directory.
+- `src/installer/root-reconciliation.js` as the single source of truth for `install`, `profile-transition`, and `uninstall` root-config edits; the engineering → core transition removes the Plan Mode block and restores the prior values byte-for-byte.
+- `scripts/vendor-sync.mjs` vendoring 14 mattpocock and 10 obra/superpowers skills with immutable commit pins, MIT license files, and adapted integration footers.
+- New agents: `ship-controller`, `ship-planner`, `ship-task-builder`, `ship-task-reviewer`, `ship-final-standards-reviewer`, `ship-final-spec-reviewer`. New commands: `ship-deliver`, `ship-resume`, `ship-status`.
+- New CLI flags: `--planner-model`, `--builder-model`, `--final-reviewer-model` for missing-config synthesis.
+- `src/workflow/plan.js` and `src/workflow/plan-store.js` for immutable PlanV2 and approvals under `<git-common-dir>/opencode-ship/plans/`.
+- `src/workflow/workspace.js`, `task-review.js`, `three-round-breaker.js`, and `commit-gate.js` for the deterministic task controller.
+- `src/workflow/compaction.js` for the bounded 4 KiB compaction block; `src/workflow/final-review.js` for binding Standards and Spec axes to one HEAD + package hash.
+- `src/tools/envelope.js` as the contract-version-2 success/failure envelope; `src/drivers/github-command-policy.js` as the fixed `gh` allowlist.
+- `src/state/github-operation-store.js` for typed GitHub operation records with idempotency.
+- `scripts/qualify.mjs` for a machine-readable qualification report (gates, pins, tarball digest) suitable for uploading to a GitHub Release.
+
+## 0.9.1 — Restore a truthful green baseline
+
+- `src/installer/plan-mirror.js` documents its options through a JSDoc typedef and rejects unknown options.
+- `mirrorPlanToIssue` now defaults to the typed `ghDriverClient`, which wraps `createGhDriver().comment()`. The runtime no longer shells out to `gh api`.
+- `previewUninstall` is now called with its supported signature; `runUninstall` no longer passes a `profile` argument.
+- `README.md` and `CHANGELOG.md` no longer claim the M3 task loop, parallel Standards/Spec Ready gate, or vendored Matt/Superpowers workflows are end-to-end shipped; those contracts remain source-only modules.
+
 ## 0.9.0 — Complete engineering profile publish
 
 `opencode-ship@0.9.0` ships the transition matrix smoke required by issue #24 (Task 10 in approved plan). The smoke covers the core↔engineering transition shape — core omits engineering-only files, engineering installs them, and the lock's `manager.profile` field tracks the active profile across upgrades. The full E2E install (`pnpm dlx opencode-ship@latest`) continues to be exercised by the existing installer-cli tests; the new module focuses on the local-dev file set so the smoke runs in the default `npm run verify` pipeline.

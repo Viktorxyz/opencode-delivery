@@ -10,7 +10,8 @@ import { makeFixtureRepo, cleanupFixture } from "../helpers/fixture.mjs";
  * The v0.1.1 implementation returns the adapter path
  * (`.opencode/delivery.json`) as `manifestPath`. The correct value
  * is the manifest file path the tool just wrote under the
- * git-common-dir (typically `<commonDir>/opencode-delivery/manifests/<taskId>.json`).
+ * git-common-dir (typically
+ * `<commonDir>/opencode-ship/delivery/manifests/<taskId>.json`).
  */
 
 suite("delivery_verify manifestPath", { concurrency: false }, () => {
@@ -57,7 +58,7 @@ suite("delivery_verify manifestPath", { concurrency: false }, () => {
       assert.equal(r.contractVersion, 1, JSON.stringify(r));
       assert.match(
         r.manifestPath,
-        /opencode-delivery\/manifests\/t1\.json$/,
+        /opencode-ship\/delivery\/manifests\/t1\.json$/,
         `manifestPath must point at the manifest file, got: ${r.manifestPath}`,
       );
       assert.notEqual(

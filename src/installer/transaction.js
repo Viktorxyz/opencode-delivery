@@ -18,6 +18,11 @@
  * removes the staged file, and deletes the journal. On startup the
  * same recovery walk runs against any leftover journal so a
  * process crash mid-transaction is recovered automatically.
+ *
+ * State location: the transaction lock, journals, and lock file all
+ * live under `<git-common-dir>/opencode-ship/` so main checkouts
+ * and linked worktrees share the same state root. The old per-
+ * worktree `--git-dir` state has been removed.
  */
 
 import {
@@ -30,30 +35,28 @@ import {
   open,
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { dirname, resolve, join } from "node:path";
+
 import { computeIntegrity } from "./lock.js";
 import { bytesHashString } from "./hash.js";
+import { resolveGitCommonDir, opencodeShipStateDir } from "../state/git-common-dir.js";
+import { withResourceLock, atomicReplaceJson } from "../state/durable-store.js";
 
-function gitDir(repoRoot) {
-  const r = spawnSync("git", ["-C", repoRoot, "rev-parse", "--path-format=absolute", "--git-dir"], {
-    encoding: "utf8",
-  });
-  if (r.status !== 0) return null;
-  const trimmed = r.stdout.trim();
-  return trimmed ? resolve(repoRoot, trimmed) : null;
+function lockDirFromCommonDir(commonDir) {
+  return opencodeShipStateDir(commonDir);
 }
 
-function lockDir(repoRoot) {
-  return resolve(gitDir(repoRoot) ?? repoRoot, "opencode-ship");
+async function lockDirForRepo(repoRoot) {
+  const commonDir = await resolveGitCommonDir(repoRoot);
+  return lockDirFromCommonDir(commonDir);
 }
 
-function transactionLockPath(repoRoot) {
-  return resolve(lockDir(repoRoot), ".txn.lock");
+function transactionLockPath(lockDir) {
+  return resolve(lockDir, ".txn.lock");
 }
 
-function journalPath(repoRoot, txnId) {
-  return resolve(lockDir(repoRoot), `.txn-${txnId}.journal`);
+function journalPath(lockDir, txnId) {
+  return resolve(lockDir, `.txn-${txnId}.journal`);
 }
 
 function backupPath(target, token) {
@@ -68,40 +71,29 @@ async function mkdirp(path) {
   await mkdir(path, { recursive: true });
 }
 
-async function acquireLock(repoRoot, txnId) {
-  const dir = lockDir(repoRoot);
-  const path = transactionLockPath(repoRoot);
-  await mkdirp(dir);
-  let created = false;
+async function acquireLock(lockDir, txnId) {
+  await mkdirp(lockDir);
+  const path = transactionLockPath(lockDir);
+  const handle = await open(path, "wx", 0o600);
   try {
-    const handle = await open(path, "wx", 0o600);
-    created = true;
-    try {
-      await handle.writeFile(JSON.stringify({
-        pid: process.pid,
-        txnId,
-        startedAt: new Date().toISOString(),
-      }));
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await fsyncDir(dir);
-  } catch (error) {
-    if (created) {
-      await unlink(path).catch(() => null);
-      await fsyncDir(dir);
-    }
-    throw error;
+    await handle.writeFile(JSON.stringify({
+      pid: process.pid,
+      txnId,
+      startedAt: new Date().toISOString(),
+    }));
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
+  await fsyncDir(lockDir);
 }
 
-async function releaseLock(repoRoot) {
-  try { await unlink(transactionLockPath(repoRoot)); } catch { /* ignore */ }
+async function releaseLock(lockDir) {
+  try { await unlink(transactionLockPath(lockDir)); } catch { /* ignore */ }
 }
 
-async function liveLockOwner(repoRoot) {
-  const path = transactionLockPath(repoRoot);
+async function liveLockOwner(lockDir) {
+  const path = transactionLockPath(lockDir);
   if (!existsSync(path)) return false;
   try {
     const lock = JSON.parse(await readFile(path, "utf8"));
@@ -140,7 +132,7 @@ function asMode(mode) {
   return typeof mode === "number" ? mode : 0o644;
 }
 
-async function writeJournal(repoRoot, txnId, journal) {
+async function writeJournal(lockDir, txnId, journal) {
   const { entries, ...header } = journal;
   const json = { ...header, ledger: entries.map((entry) => ({
     op: entry.op,
@@ -152,32 +144,32 @@ async function writeJournal(repoRoot, txnId, journal) {
     installedSha256: entry.installedSha256 ?? null,
     mode: entry.mode ?? null,
   })) };
-  const target = journalPath(repoRoot, txnId);
-  const staged = `${target}.tmp`;
-  const handle = await open(staged, "w", 0o600);
-  try {
-    await handle.writeFile(JSON.stringify(json, null, 2), "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(staged, target);
-  await fsyncDir(dirname(target));
+  await atomicReplaceJson(journalPath(lockDir, txnId), json);
 }
 
-async function clearJournal(repoRoot, txnId) {
+async function clearJournal(lockDir, txnId) {
   if (!txnId) return;
-  try { await unlink(journalPath(repoRoot, txnId)); } catch { /* ignore */ }
+  try { await unlink(journalPath(lockDir, txnId)); } catch { /* ignore */ }
 }
 
-async function readJournal(repoRoot, name) {
-  const path = resolve(lockDir(repoRoot), name);
+async function readJournal(lockDir, name) {
+  const path = resolve(lockDir, name);
+  let raw;
   try {
-    const raw = await readFile(path, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return null;
+    raw = await readFile(path, "utf8");
+  } catch (err) {
+    throw new Error(`transaction journal unreadable: ${path}: ${err?.message ?? err}`);
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`transaction journal malformed JSON: ${path}: ${err?.message ?? err}`);
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.ledger)) {
+    throw new Error(`transaction journal missing ledger: ${path}`);
+  }
+  return parsed;
 }
 
 async function isCommitted(journal) {
@@ -205,13 +197,13 @@ async function restoreEntry(entry) {
   await fsyncDir(dirname(entry.target));
 }
 
-async function recoverJournal(repoRoot, dir, name) {
-  const journal = await readJournal(repoRoot, name);
-  if (!journal) {
-    await unlink(resolve(dir, name)).catch(() => null);
-    return true;
+async function recoverJournal(lockDir, name) {
+  let journal;
+  try {
+    journal = await readJournal(lockDir, name);
+  } catch (err) {
+    return { ok: false, error: err };
   }
-
   const committed = await isCommitted(journal);
   const entries = committed ? (journal.ledger ?? []) : [...(journal.ledger ?? [])].reverse();
   let complete = true;
@@ -223,35 +215,41 @@ async function recoverJournal(repoRoot, dir, name) {
       complete = false;
     }
   }
-  if (complete) await unlink(resolve(dir, name)).catch(() => null);
-  return complete;
+  if (complete) await unlink(resolve(lockDir, name)).catch(() => null);
+  return { ok: complete };
 }
 
-async function recover(repoRoot) {
-  const dir = lockDir(repoRoot);
-  if (!existsSync(dir)) return { recovered: false, recoveredCount: 0 };
-  if (await liveLockOwner(repoRoot)) {
+async function recover(repoRoot, lockDir) {
+  if (!existsSync(lockDir)) return { recovered: false, recoveredCount: 0 };
+  if (await liveLockOwner(lockDir)) {
     return { recovered: false, recoveredCount: 0, blocked: true };
   }
   const { readdir } = await import("node:fs/promises");
-  const names = await readdir(dir).catch(() => []);
+  const names = await readdir(lockDir).catch(() => []);
   const journals = names.filter((n) => n.startsWith(".txn-") && n.endsWith(".journal"));
   if (!journals.length) {
-    await releaseLock(repoRoot);
+    await releaseLock(lockDir);
     return { recovered: false, recoveredCount: 0 };
   }
   let totalRecovered = 0;
   let recoveryFailed = false;
+  let recoveryError = null;
   for (const name of journals) {
-    if (await recoverJournal(repoRoot, dir, name)) totalRecovered += 1;
-    else recoveryFailed = true;
+    const result = await recoverJournal(lockDir, name);
+    if (!result.ok) {
+      recoveryFailed = true;
+      if (result.error) recoveryError = result.error.message ?? String(result.error);
+    } else {
+      totalRecovered += 1;
+    }
   }
-  await releaseLock(repoRoot);
+  await releaseLock(lockDir);
   return {
     recovered: totalRecovered > 0,
     recoveredCount: totalRecovered,
     blocked: recoveryFailed,
     reason: recoveryFailed ? "recovery-failed" : null,
+    recoveryError,
   };
 }
 
@@ -269,17 +267,18 @@ async function commitEntry(entry) {
 }
 
 export async function executePlan({ repoRoot, plan, newLockBuilder }) {
-  const recovered = await recover(repoRoot);
+  const lockDir = await lockDirForRepo(repoRoot);
+  const recovered = await recover(repoRoot, lockDir);
   if (recovered.blocked) {
     const kind = recovered.reason ?? "lock-held";
     const message = kind === "lock-held"
       ? "another opencode-ship transaction is active"
-      : "a previous opencode-ship transaction could not be recovered";
+      : `a previous opencode-ship transaction could not be recovered: ${recovered.recoveryError ?? "unknown error"}`;
     return { ok: false, error: { kind, message } };
   }
   const txnId = `txn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   try {
-    await acquireLock(repoRoot, txnId);
+    await acquireLock(lockDir, txnId);
   } catch (e) {
     return { ok: false, error: { kind: "lock-held", message: e?.message ?? String(e) } };
   }
@@ -287,7 +286,7 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
   const journal = { repoRoot, txnId, startedAt: new Date().toISOString(), entries: [] };
 
   try {
-    await writeJournal(repoRoot, txnId, journal);
+    await writeJournal(lockDir, txnId, journal);
     for (const op of plan) {
       if (op.op !== "file") continue;
       if (op.kind === "conflict" || op.kind === "noop" || op.kind === "converge") continue;
@@ -301,7 +300,7 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
         journal.entries.push({
           op: "delete", target: op.target, backup, staged: null, hadOriginal: true, mode: asMode(op.mode),
         });
-        await writeJournal(repoRoot, txnId, journal);
+        await writeJournal(lockDir, txnId, journal);
         await rename(op.target, backup);
       } else {
         await mkdirp(dirname(op.target));
@@ -314,7 +313,7 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
           hadOriginal,
           mode: asMode(op.mode),
         });
-        await writeJournal(repoRoot, txnId, journal);
+        await writeJournal(lockDir, txnId, journal);
         await writeFile(staged, op.bytes ?? Buffer.alloc(0), { mode: asMode(op.mode) });
         const h = await open(staged, "r+");
         await h.sync();
@@ -345,7 +344,7 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
         installedSha256: bytesHashString(lockBytes),
         mode: 0o644,
       });
-      await writeJournal(repoRoot, txnId, journal);
+      await writeJournal(lockDir, txnId, journal);
       await writeFile(staged, lockBytes, { mode: 0o644 });
       const handle = await open(staged, "r+");
       await handle.sync();
@@ -356,12 +355,12 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
     }
 
     journal.committed = true;
-    await writeJournal(repoRoot, txnId, journal);
+    await writeJournal(lockDir, txnId, journal);
     let cleanupComplete = true;
     for (const entry of journal.entries) {
       try { await commitEntry(entry); } catch { cleanupComplete = false; }
     }
-    if (cleanupComplete) await clearJournal(repoRoot, txnId);
+    if (cleanupComplete) await clearJournal(lockDir, txnId);
     return {
       ok: true,
       txnId,
@@ -370,18 +369,20 @@ export async function executePlan({ repoRoot, plan, newLockBuilder }) {
       cleanupPending: !cleanupComplete,
     };
   } catch (e) {
-    await rollback(repoRoot, journal);
+    await rollback(lockDir, journal);
     return { ok: false, error: { kind: "transaction-failed", message: e?.message ?? String(e) } };
   } finally {
-    await releaseLock(repoRoot);
+    await releaseLock(lockDir);
   }
 }
 
-async function rollback(repoRoot, journal) {
+async function rollback(lockDir, journal) {
   const entries = journal.entries ?? journal.ledger ?? [];
   let complete = true;
   for (const entry of [...entries].reverse()) {
     try { await restoreEntry(entry); } catch { complete = false; }
   }
-  if (complete && journal.txnId) await clearJournal(repoRoot, journal.txnId);
+  if (complete && journal.txnId) await clearJournal(lockDir, journal.txnId);
 }
+
+export { withResourceLock, lockDirForRepo };

@@ -76,11 +76,27 @@ export function validateEngineeringConfig(cfg) {
 
 /**
  * Merge the user config with the documented defaults. When
- * `strict` is true, an explicitly-empty role (user provided ""
- * for a role that has no default) throws; otherwise the default
- * fills the gap silently.
+ * `strict` is true, the user must explicitly provide every
+ * required role (`planner`, `builder`, `finalReviewer`);
+ * the defaults are NOT consulted in strict mode. The strict
+ * mode is what `init --profile engineering` uses so the
+ * controller can refuse a partial engineering install.
  */
 export function resolveModelRoles(cfg, { strict = false } = {}) {
+  const REQUIRED = ["planner", "builder", "finalReviewer"];
+  if (strict) {
+    const issues = [];
+    for (const role of REQUIRED) {
+      const id = cfg?.models?.[role];
+      if (typeof id !== "string" || id.length === 0 || !MODEL_ID_RE.test(id)) {
+        issues.push(role);
+      }
+    }
+    if (issues.length > 0) {
+      throw new Error(`resolveModelRoles: required role(s) missing or invalid: ${issues.join(", ")}`);
+    }
+    return { planner: cfg.models.planner, builder: cfg.models.builder, finalReviewer: cfg.models.finalReviewer };
+  }
   const out = { ...DEFAULTS };
   if (cfg && cfg.models) {
     for (const [role, id] of Object.entries(cfg.models)) {
@@ -91,11 +107,9 @@ export function resolveModelRoles(cfg, { strict = false } = {}) {
       }
     }
   }
-  if (strict) {
-    for (const role of ["planner", "builder", "finalReviewer"]) {
-      if (!out[role]) {
-        throw new Error(`resolveModelRoles: required role '${role}' missing and no default available`);
-      }
+  for (const role of REQUIRED) {
+    if (!out[role]) {
+      throw new Error(`resolveModelRoles: required role '${role}' missing and no default available`);
     }
   }
   return out;

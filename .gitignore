@@ -8,3 +8,4 @@ coverage
 .opencode-ship/
 tsconfig.dts.json
 dist-pkg/
+vendor/upstreams-clones/
