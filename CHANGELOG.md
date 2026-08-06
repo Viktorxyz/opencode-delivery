@@ -4,50 +4,50 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## Unreleased
 
-- The `release/1.0-completion` branch contains the complete
-  production runtime for the planned `0.10.0` release. No
-  `0.10.0` or `1.0.0` has been published; consumers should keep
-  using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0`
-  tags are placeholders only and must not be pushed.
+- The `release/1.0-completion` branch contains partial
+  source-only helpers for the planned `0.10.0` runtime. Tasks
+  2–12 of the canonical plan are partial or failed and the
+  branch is not release-ready. No `0.10.0` or `1.0.0` has been
+  published; consumers should keep using `opencode-ship@0.9.0`.
+  The local `v0.10.0` and `v1.0.0` tags are placeholders only
+  and must not be pushed.
 - See `RELEASING.md` for the operational runbook and
   `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json`
   for the authoritative task state.
 
-### Shipped source on `release/1.0-completion` (not yet released)
+### Source changes on `release/1.0-completion` (not yet released)
 
-These changes are present in source on the
-`release/1.0-completion` branch but are not production-ready
-until the formal registry dogfood on the npm-published `0.10.0`
-succeeds. Items will move to a dated release header only after
-that step completes.
+The following helper files are present in source on the
+`release/1.0-completion` branch but are not yet wired into the
+production runtime. Items will move to a dated release header
+only after the production wiring, the qualification pipeline,
+and the formal registry dogfood on the npm-published `0.10.0`
+all succeed.
 
-- Crash-safe Git-common storage: link()-based atomic publication,
-  SHA-256 hashed resource locks, explicit legacy migration from
-  the `opencode-delivery/` path to `opencode-ship/delivery/`.
-- Fail-closed profile transitions and uninstall: pointer
-  `installedSha256` verification refuses to overwrite user edits;
-  transactional `--purge-config`.
-- Real upstream vendoring: 24 SKILL.md files plus companion
-  files from the pinned
-  `mattpocock/skills@2ab958093e83e0ec752e6c1c5932da465bf23e0c`
-  and `obra/superpowers@44c9b2d6e889982ac18c27d05a19fefe335194e1`
-  commits, frozen byte-identical under `vendor/upstreams/`.
-- Config V2: `workflow.models.{planner,builder,finalReviewer}` are
-  required for the engineering profile; core remains unchanged.
-- 24 typed tools: 9 existing delivery tools + 7 Git/GitHub
-  control-plane tools + 8 workflow tools (`ship_plan_*`,
-  `ship_run_*`, `ship_task_*`, `ship_resume`, `ship_status`).
-- Contract-version-2 envelope + immutable GitHub operation store.
-- Deterministic run reducer + controller with commit trailers.
-- Per-run resume lock + crash reconciliation + mirror
-  restoration.
-- Same-HEAD gate across final Standards/Spec reviews,
-  verification, CI, PR, and Ready.
-- Two-task workflow qualification with fake GitHub/model
-  harness.
-- Nine-job release qualification pipeline
-  (`.github/workflows/release.yml`) with one canonical pack
-  artifact, SPDX SBOM, and machine-readable qualification report.
+- Storage: link()-based atomic publication, SHA-256 resource
+  locks, and Git-common manifest migration. Portability fix
+  pending.
+- Installer: profile-scoped uninstall/path planning. Doctor
+  profile scope and lock V3 schema still incomplete.
+- Vendor: 60-file manifest from pinned upstream commits under
+  `vendor/upstreams/`. CI verification from a fresh clone and
+  companion-file installation are still incomplete.
+- Config V2 schema: `workflow.models.{planner,builder,finalReviewer}`
+  declared required for engineering; enforcement and agent
+  rendering still pending.
+- 24 typed tool modules registered by the plugin. The seven
+  new control-plane tools and the eight workflow tools are
+  not yet wired through the production driver and the
+  reducer.
+- PlanV2 helpers (validator, plan store, mirror hydration).
+  Production wiring through `ship_plan_*` is partial.
+- Run reducer, event ledger, commit eligibility, crash
+  reconciliation, and same-HEAD gate helpers. Production
+  wiring through `ship_task_*` and the final review jobs is
+  partial.
+- `.github/workflows/release.yml` defines nine qualification
+  jobs. Vendor-sync dependency, vendored tarball path, and
+  `--tag next` policy are still incomplete.
 
 ### Planned (not yet shipped)
 
