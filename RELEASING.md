@@ -31,7 +31,24 @@ the `package.json` version and pass the 10-job qualification.
    GitHub repository.
 2. Confirm ten trusted publishing is configured on npmjs.org for
    the `opencode-ship` package under the `Viktorxyz/opencode-ship`
-   workflow.
+   workflow. The package-level configuration must be:
+
+   - Publisher: GitHub Actions
+   - Owner / repository: `Viktorxyz/opencode-ship`
+   - Workflow filename: `release.yml`
+   - Environment name: empty
+   - Allowed action: `npm publish`
+
+   Without this configuration, npm rejects every GitHub-Actions
+   publish with `404 Not Found - PUT .../opencode-ship` and the
+   tarball is left unpublished. The release workflow does NOT
+   fall back to a long-lived `NPM_TOKEN`; trusted publishing is
+   the only authentication path.
+
+   npm trusted publishing also requires Node ≥ 22.14.0 and npm
+   ≥ 11.5.1. The release workflow pins Node 22.14.0 and npm
+   11.5.2; older versions silently fall back to the
+   `NODE_AUTH_TOKEN` placeholder and emit the same 404.
 3. Designate a neutral disposable GitHub repository (for example
    `Viktorxyz/opencode-ship-dogfood`) where the formal 0.10.0
    dogfood will run. The repository MUST be a single-dependency
