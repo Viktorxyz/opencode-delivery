@@ -12,14 +12,44 @@ function fail(msg) {
   process.exit(1);
 }
 
-const esbuildBin = resolve(root, "node_modules/.bin/esbuild");
-if (!existsSync(esbuildBin)) {
-  fail("esbuild missing; run `npm install` first");
+function findTool(candidates) {
+  for (const rel of candidates) {
+    const abs = resolve(root, rel);
+    if (existsSync(abs)) return abs;
+  }
+  return null;
 }
 
-const tscBin = resolve(root, "node_modules/.bin/tsc");
-if (!existsSync(tscBin)) {
-  fail("typescript missing; run `npm install` first");
+const esbuildBin = findTool([
+  "node_modules/.bin/esbuild",
+  "node_modules/esbuild/bin/esbuild",
+  "node_modules/esbuild/lib/main.js",
+]);
+
+if (!esbuildBin) {
+  // Try to recover by installing esbuild on demand. This handles
+  // the case where npm ci on a clean runner did not run the
+  // optional-binary postinstall for esbuild.
+  const install = spawnSync("npm", ["install", "--no-save", "--no-audit", "--no-fund", "esbuild@^0.25.0"], {
+    stdio: "inherit",
+  });
+  if (install.status !== 0 || !findTool(["node_modules/.bin/esbuild"])) {
+    fail("esbuild missing; run `npm install` first");
+  }
+}
+
+const tscBin = findTool([
+  "node_modules/.bin/tsc",
+  "node_modules/typescript/bin/tsc",
+]);
+
+if (!tscBin) {
+  const install = spawnSync("npm", ["install", "--no-save", "--no-audit", "--no-fund", "typescript@^5.9.3"], {
+    stdio: "inherit",
+  });
+  if (install.status !== 0 || !findTool(["node_modules/.bin/tsc"])) {
+    fail("typescript missing; run `npm install` first");
+  }
 }
 
 const build = spawnSync("node", [resolve(root, "scripts/build.mjs")], { stdio: "inherit" });
