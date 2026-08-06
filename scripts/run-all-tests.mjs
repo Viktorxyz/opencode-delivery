@@ -4,8 +4,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const TSX = existsSync("node_modules/.bin/tsx") ? "node_modules/.bin/tsx" : "tsx";
-
 function discover(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
@@ -24,7 +22,17 @@ if (tests.length === 0) {
   console.error("no tests found under tests/");
   process.exit(1);
 }
-const r = spawnSync("node", [TSX, "--test", "--test-concurrency=1", "--test-reporter=spec", "--tsconfig", "tsconfig.json", ...tests], {
+// `node --test` walks the file list directly. The tests are all
+// `.mjs`; no TS compilation is needed. The runner is invoked
+// without `tsx` so the CI environment is no longer dependent on
+// a working TypeScript runtime.
+const r = spawnSync("node", [
+  "--test",
+  "--test-concurrency=1",
+  "--test-reporter=spec",
+  ...tests,
+], {
   stdio: "inherit",
+  env: { ...process.env, NODE_NO_WARNINGS: "1" },
 });
 process.exit(r.status ?? 1);
