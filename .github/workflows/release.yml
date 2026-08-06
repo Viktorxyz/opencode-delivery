@@ -111,6 +111,20 @@ jobs:
             ref="${{ github.ref_name }}"
           fi
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+      - name: validate ref exists
+        run: |
+          set -euo pipefail
+          ref="${{ steps.refs.outputs.ref }}"
+          echo "Validating ref: $ref"
+          # fetch tags so refs/tags/<name> are available locally
+          git fetch --tags origin || true
+          if ! git rev-parse --verify "$ref" >/dev/null 2>&1; then
+            echo "::error::ref '$ref' not found; ensure the supplied tag exists on origin"
+            echo "Available tags:"
+            git ls-remote --tags origin | sed -n '1,200p' || true
+            exit 2
+          fi
+          echo "ref $ref resolves to $(git rev-parse "$ref")"
       - name: checkout release ref
         uses: actions/checkout@v4
         with:
@@ -127,7 +141,7 @@ jobs:
             ls -la
             exit 2
           fi
-          pkg_version="$(node -p "require('./package.json').version")"
+          pkg_version="$(node scripts/get-version.mjs)"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "pkg_version=${pkg_version}" >> "$GITHUB_OUTPUT"
           echo "tarball_name=opencode-ship-${pkg_version}.tgz" >> "$GITHUB_OUTPUT"
@@ -136,16 +150,16 @@ jobs:
         run: |
           mkdir -p dist-pkg
           npm pack --pack-destination dist-pkg
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           tarball="dist-pkg/opencode-ship-${ver}.tgz"
           echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
       - name: SHA-256
         run: |
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           sha256sum "dist-pkg/opencode-ship-${ver}.tgz" > "dist-pkg/opencode-ship-${ver}.tgz.sha256"
       - name: SPDX SBOM
         run: |
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           cat > "dist-pkg/opencode-ship-${ver}.spdx.json" <<EOF
           {"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"opencode-ship-${ver}","documentNamespace":"https://github.com/Viktorxyz/opencode-ship/releases/tag/${ver}","creationInfo":{"created":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","creators":["Tool: opencode-ship release pipeline"]},"packages":[{"SPDXID":"SPDXRef-Package","name":"opencode-ship","versionInfo":"${ver}","downloadLocation":"https://registry.npmjs.org/opencode-ship/-/opencode-ship-${ver}.tgz","licenseDeclared":"MIT"}]}
           EOF
@@ -462,7 +476,7 @@ jobs:
             ls -la
             exit 2
           fi
-          pkg_version="$(node -p "require('./package.json').version")"
+          pkg_version="$(node scripts/get-version.mjs)"
           lock_version="$(node -p "require('./package-lock.json').version")"
           expected_tag="${pkg_version}"
           # Strip optional leading "v" so v-prefixed tags are also accepted.
@@ -523,7 +537,7 @@ jobs:
           path: dist-pkg/
       - name: compose report
         run: |
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           sha="$(git rev-parse HEAD)"
           tarball="$(realpath "$(ls dist-pkg/opencode-ship-${ver}.tgz | head -1)")"
           tarball_sha="$(sha256sum ${tarball} | awk '{print $1}')"
@@ -602,12 +616,12 @@ jobs:
       - name: compute metadata
         id: meta
         run: |
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           echo "pkg_version=${ver}" >> "$GITHUB_OUTPUT"
       - name: resolve dist-tag
         id: disttag
         run: |
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           case "$ver" in
             *-rc.*|*-alpha.*|*-beta.*) tag=next;;
             1.0.*) tag=candidate;;
@@ -617,7 +631,7 @@ jobs:
       - name: check npm version is unused
         run: |
           set -euo pipefail
-          pkg_version="$(node -p "require('./package.json').version")"
+          pkg_version="$(node scripts/get-version.mjs)"
           if npm view "opencode-ship@${pkg_version}" version 2>/dev/null; then
             echo "::error::npm already has opencode-ship@${pkg_version}"
             exit 2
@@ -633,7 +647,7 @@ jobs:
       - name: post-publish npm smoke
         run: |
           set -euo pipefail
-          ver="$(node -p "require('./package.json').version")"
+          ver="$(node scripts/get-version.mjs)"
           mkdir -p /tmp/post-publish
           pushd /tmp/post-publish
           npm install --no-save --no-audit --no-fund "opencode-ship@${ver}"
