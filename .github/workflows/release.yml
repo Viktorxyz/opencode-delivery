@@ -76,6 +76,10 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      pkg_version: ${{ steps.meta.outputs.pkg_version }}
+      tarball_name: ${{ steps.meta.outputs.tarball_name }}
+      release_ref: ${{ steps.refs.outputs.ref }}
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -595,7 +599,26 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PKG_VERSION: ${{ needs.pack.outputs.pkg_version }}
+      TARBALL_NAME: ${{ needs.pack.outputs.tarball_name }}
+      RELEASE_REF: ${{ needs.pack.outputs.release_ref }}
     steps:
+      - name: assert pack outputs are present
+        run: |
+          set -euo pipefail
+          if [[ -z "${PKG_VERSION}" ]]; then
+            echo "::error::needs.pack.outputs.pkg_version is empty"
+            exit 2
+          fi
+          if [[ -z "${TARBALL_NAME}" ]]; then
+            echo "::error::needs.pack.outputs.tarball_name is empty"
+            exit 2
+          fi
+          if [[ -z "${RELEASE_REF}" ]]; then
+            echo "::error::needs.pack.outputs.release_ref is empty"
+            exit 2
+          fi
+          echo "publishing pkg_version=${PKG_VERSION} tarball=${TARBALL_NAME} ref=${RELEASE_REF}"
       - name: download pack
         uses: actions/download-artifact@v4
         with:
@@ -606,6 +629,24 @@ jobs:
         with:
           name: qualification-report
           path: dist-pkg/
+      - name: verify tarball is present
+        run: |
+          set -euo pipefail
+          tarball="dist-pkg/${TARBALL_NAME}"
+          if [[ ! -f "${tarball}" ]]; then
+            echo "::error::expected tarball ${tarball} not present"
+            ls -la dist-pkg/
+            exit 2
+          fi
+          # Sanity check: exactly one opencode-ship tarball should be
+          # downloaded; multiple matches mean the artifact blob is dirty.
+          matches=(dist-pkg/opencode-ship-*.tgz)
+          if [[ ${#matches[@]} -ne 1 ]]; then
+            echo "::error::expected exactly one opencode-ship tarball, found ${#matches[@]}"
+            ls -la dist-pkg/
+            exit 2
+          fi
+          echo "verified tarball ${matches[0]}"
       - name: setup-node
         uses: actions/setup-node@v4
         with:
@@ -613,61 +654,59 @@ jobs:
           registry-url: https://registry.npmjs.org
       - name: install npm with trusted publishing
         run: npm install --global npm@11.5.2
-      - name: compute metadata
-        id: meta
-        run: |
-          ver="$(node scripts/get-version.mjs)"
-          echo "pkg_version=${ver}" >> "$GITHUB_OUTPUT"
       - name: resolve dist-tag
         id: disttag
         run: |
-          ver="$(node scripts/get-version.mjs)"
-          case "$ver" in
+          case "${PKG_VERSION}" in
             *-rc.*|*-alpha.*|*-beta.*) tag=next;;
             1.0.*) tag=candidate;;
             *) tag=next;;
           esac
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "dist-tag for ${PKG_VERSION} = ${tag}"
       - name: check npm version is unused
         run: |
           set -euo pipefail
-          pkg_version="$(node scripts/get-version.mjs)"
-          if npm view "opencode-ship@${pkg_version}" version 2>/dev/null; then
-            echo "::error::npm already has opencode-ship@${pkg_version}"
+          if npm view "opencode-ship@${PKG_VERSION}" version 2>/dev/null; then
+            echo "::error::npm already has opencode-ship@${PKG_VERSION}"
             exit 2
           fi
       - name: publish to npm
         run: |
           set -euo pipefail
-          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
-          # npm 11.5.2's npa parser treats a ./foo.tgz argument as a
-          # local tarball; the --tag controls the dist-tag (next for
-          # RCs and 0.10.x, candidate for 1.0.x, never latest).
-          npm publish "./${tarball}" --access public --provenance --tag "${{ steps.disttag.outputs.tag }}"
+          # npm 11.5.2's npa parser interprets "dist-pkg/foo.tgz" as
+          # a git shorthand URL; it only recognises the argument as a
+          # local tarball when it starts with "./" or "/". We keep
+          # the path relative to GITHUB_WORKSPACE so the step is
+          # independent of the runner's $PWD, and we prefix with "./"
+          # to disambiguate it from git/URL specifiers.
+          tarball="./dist-pkg/${TARBALL_NAME}"
+          # --tag controls the dist-tag (next for RCs and 0.10.x,
+          # candidate for 1.0.x, never latest).
+          npm publish "${tarball}" --access public --provenance --tag "${{ steps.disttag.outputs.tag }}"
       - name: post-publish npm smoke
         run: |
           set -euo pipefail
-          ver="$(node scripts/get-version.mjs)"
           mkdir -p /tmp/post-publish
           pushd /tmp/post-publish
-          npm install --no-save --no-audit --no-fund "opencode-ship@${ver}"
+          npm install --no-save --no-audit --no-fund "opencode-ship@${PKG_VERSION}"
           test -f node_modules/opencode-ship/package.json
           npx --no-install opencode-ship --version
           popd
       - name: publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: opencode-ship ${{ steps.meta.outputs.pkg_version }}
+          tag_name: ${{ env.RELEASE_REF }}
+          name: opencode-ship ${{ env.PKG_VERSION }}
           body: |
-            ## opencode-ship ${{ steps.meta.outputs.pkg_version }}
+            ## opencode-ship ${{ env.PKG_VERSION }}
 
             npm-distributed OpenCode installer and delivery plugin.
 
             ### Install
 
             ```sh
-            pnpm dlx opencode-ship@${{ steps.meta.outputs.pkg_version }} init
+            pnpm dlx opencode-ship@${{ env.PKG_VERSION }} init
             ```
 
             ### Evidence
