@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "producedAt": "2026-08-05T16:25:14.430Z",
+  "headSha": "unknown",
+  "toolVersion": "0.9.0",
+  "environment": {
+    "node": "v22.22.2",
+    "git": "git version 2.55.0",
+    "npm": "10.9.7"
+  },
+  "gates": [
+    {
+      "name": "source-verify",
+      "argv": [
+        "node",
+        "scripts/verify.mjs"
+      ],
+      "exitCode": 0,
+      "durationMs": 144231,
+      "stdoutLines": 8887,
+      "stderrLines": 13
+    }
+  ],
+  "pins": [
+    {
+      "path": "vendor/sources.json",
+      "sha256": "8386068dc527006efd1ec9bb99670e0da7df72d1599e71976f61388c2dd515a7"
+    },
+    {
+      "path": "src/installer/lock.js",
+      "sha256": "a36adb7222be3409be8f3a542ec569723bd7921bbcfff8b1dbf623221daf5641"
+    },
+    {
+      "path": "src/installer/catalog.js",
+      "sha256": "2142513adcd96387521e711bdbb15c4c20fd73ae6f4f0f451886defdc1f4fc7b"
+    },
+    {
+      "path": "src/workflow/plan.js",
+      "sha256": "f3648587ff8456691fac26e5f3f813980942629e2957cd02c0b3920ea29b12c1"
+    },
+    {
+      "path": "src/workflow/compaction.js",
+      "sha256": "647d7c7fa8fd525082b96a8e6f3404c06bfe92e97fe2a15f63375a121aef69b3"
+    },
+    {
+      "path": "src/workflow/final-review.js",
+      "sha256": "b027af1147024b630d3a7e2acf8ff0b3b9f300d31134115d6548c7f93c06d40b"
+    },
+    {
+      "path": "src/installer/root-reconciliation.js",
+      "sha256": "c7e0c8b800e4fb6ee52094d343221ca19b345ca6983b3ab9361807e91d114af9"
+    }
+  ],
+  "tarball": {
+    "path": "/home/viktorcordas/repos/opencode-ship/dist-pkg/opencode-ship-0.9.0.tgz",
+    "filename": "opencode-ship-0.9.0.tgz",
+    "sha256": "d168d0386b030be87ddc2d6f1113a97949dd0489bad9d4ffe9447e2b7b50109c",
+    "size": 167137
+  }
+}

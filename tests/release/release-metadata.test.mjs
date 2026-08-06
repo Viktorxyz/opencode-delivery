@@ -26,7 +26,8 @@ function readText(rel) {
 test("package.json: name, version, repository, and publishConfig align", () => {
   const pkg = readJSON("package.json");
   assert.equal(pkg.name, "opencode-ship");
-  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  // Accept SemVer: 0.9.0, 0.10.0-rc.1, 1.0.0-rc.2, etc.
+  assert.match(pkg.version, /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
   assert.equal(pkg.repository.url, "https://github.com/Viktorxyz/opencode-ship.git");
   assert.equal(pkg.homepage, "https://github.com/Viktorxyz/opencode-ship#readme");
   assert.equal(pkg.bugs.url, "https://github.com/Viktorxyz/opencode-ship/issues");

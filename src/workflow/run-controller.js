@@ -39,6 +39,34 @@ import { join } from "node:path";
 import { resolveGitCommonDir, opencodeShipStateDir } from "../state/git-common-dir.js";
 import { publishImmutableJson, withResourceLock } from "../state/durable-store.js";
 
+async function readSnapshotFromDisk(repoRoot, workflowId) {
+  const common = await resolveGitCommonDir(repoRoot);
+  const runPath = join(opencodeShipStateDir(common), "runs", workflowId, "run.json");
+  if (!existsSync(runPath)) return null;
+  try {
+    const raw = await readFile(runPath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function readEventsFromDisk(repoRoot, workflowId) {
+  const common = await resolveGitCommonDir(repoRoot);
+  const dir = join(opencodeShipStateDir(common), "runs", workflowId, "events");
+  if (!existsSync(dir)) return [];
+  const entries = await readdir(dir);
+  const sorted = entries.filter((n) => n.endsWith(".json")).sort();
+  const out = [];
+  for (const name of sorted) {
+    try {
+      const raw = await readFile(join(dir, name), "utf8");
+      out.push(JSON.parse(raw));
+    } catch { /* skip unreadable */ }
+  }
+  return out;
+}
+
 const STATES = Object.freeze({
   CREATED: "created",
   RUNNING: "running",
@@ -101,6 +129,21 @@ function appendEvent(state, recorded) {
   const hash = sha256(canonicalize({ kind: recorded.kind, data: recorded.data, at: recorded.at, sequence: recorded.sequence, priorHash }));
   const withHash = { ...recorded, priorHash, hash };
   return [...state.events, withHash];
+}
+
+function normalizeState(state) {
+  // Defensive: the reducer expects completedTasks and taskReady
+  // to be defined. Snapshots always carry them, but a snapshot
+  // reloaded from on-disk events can be missing fields if the
+  // recorded event was written by a different code path.
+  return {
+    ...state,
+    completedTasks: Array.isArray(state.completedTasks) ? state.completedTasks : [],
+    taskReady: state.taskReady ?? null,
+    events: Array.isArray(state.events) ? state.events : [],
+    round: Number.isInteger(state.round) ? state.round : 0,
+    failures: Number.isInteger(state.failures) ? state.failures : 0,
+  };
 }
 
 function ensureActiveTask(state, taskId) {
@@ -266,7 +309,18 @@ export async function appendRunEvent(repoRoot, workflowId, state, event) {
   await mkdir(dir, { recursive: true });
   const lockKey = `run:${workflowId}`;
   return withResourceLock(opencodeShipStateDir(common), lockKey, async () => {
-    const { state: next, event: recorded } = reduce(state, event);
+    // Reload the actual event ledger + snapshot inside the
+    // lock so the sequence is monotonically global to the run
+    // and the snapshot's completedTasks / taskReady are not
+    // lost when the controller continues from a disk-only
+    // re-load.
+    const persistedEvents = await readEventsFromDisk(repoRoot, workflowId);
+    const persistedSnapshot = await readSnapshotFromDisk(repoRoot, workflowId);
+    const liveState = normalizeState({
+      ...(persistedSnapshot ?? state),
+      events: persistedEvents.length > 0 ? persistedEvents : (state.events ?? []),
+    });
+    const { state: next, event: recorded } = reduce(liveState, event);
     const sequence = String(recorded.sequence).padStart(8, "0");
     const path = join(dir, `${sequence}.json`);
     await publishImmutableJson(path, recorded);
@@ -277,6 +331,7 @@ export async function appendRunEvent(repoRoot, workflowId, state, event) {
       sha256: next.sha256,
       state: next.state,
       activeTask: next.activeTask,
+      taskReady: next.taskReady ?? null,
       failures: next.failures,
       round: next.round,
       completedTasks: next.completedTasks,
