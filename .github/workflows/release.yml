@@ -41,9 +41,12 @@ jobs:
         with:
           node-version: "22.13.0"
       - name: install dependencies
+        env:
+          NPM_CONFIG_PRODUCTION: "false"
+          NODE_ENV: development
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
-            npm ci --no-audit --no-fund
+            npm ci --no-audit --no-fund --include=dev
           else
             echo "::error::No dependency lockfile. Commit package-lock.json."
             exit 1
@@ -84,9 +87,12 @@ jobs:
         with:
           node-version: "22.13.0"
       - name: install dependencies
+        env:
+          NPM_CONFIG_PRODUCTION: "false"
+          NODE_ENV: development
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
-            npm ci --no-audit --no-fund
+            npm ci --no-audit --no-fund --include=dev
           else
             echo "::error::No dependency lockfile. Commit package-lock.json."
             exit 1
@@ -401,9 +407,12 @@ jobs:
         with:
           node-version: "22.13.0"
       - name: install dependencies
+        env:
+          NPM_CONFIG_PRODUCTION: "false"
+          NODE_ENV: development
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
-            npm ci --no-audit --no-fund
+            npm ci --no-audit --no-fund --include=dev
           else
             echo "::error::No dependency lockfile. Commit package-lock.json."
             exit 1
