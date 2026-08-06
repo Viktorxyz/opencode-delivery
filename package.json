@@ -1,6 +1,6 @@
 {
   "name": "opencode-ship",
-  "version": "0.10.0-rc.5",
+  "version": "0.10.0-rc.6",
   "private": false,
   "description": "npm-distributed OpenCode installer that materializes the delivery plugin, reviewer/verifier agents, skills, ship config and lock into any consumer repository.",
   "license": "MIT",
