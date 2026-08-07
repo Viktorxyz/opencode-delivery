@@ -43,6 +43,7 @@ function isMainEntry() {
 const projectDir = process.argv[2];
 const opencodeVersion = process.argv[3] ?? "1.18.10";
 const profile = process.argv[4] ?? "engineering";
+const explicitBinary = process.argv[5] ?? null;
 
 if (!projectDir) {
   console.error("run-opencode-discovery-smoke: <project-dir> argument is required");
@@ -85,15 +86,21 @@ async function stopServer(proc, deadlineMs = 5000) {
 
 async function main() {
   // Discover the opencode binary. The CI workflow installs
-  // opencode-ai into the consumer workspace's node_modules via
-  // `npm install --no-save`, so the canonical location is
-  // `<projectDir>/node_modules/.bin/opencode`. Local developer
-  // runs also resolve from PATH (`command -v opencode`) and the
+  // opencode-ai into the runner's checkout
+  // (`$GITHUB_WORKSPACE/node_modules`) — NOT the consumer
+  // workspace — so the canonical location is the
+  // `$GITHUB_WORKSPACE/node_modules/.bin/opencode` path the
+  // caller passes in. Local developer runs fall back to
+  // `<projectDir>/node_modules/.bin/opencode`, then to
+  // `command -v opencode` on PATH, and finally to the
   // well-known user install location (`~/.opencode/bin/opencode`)
-  // for parity.
+  // for parity with `tests/release/opencode-discovery.test.mjs`.
   let bin = null;
-  const localInstall = join(projectDir, "node_modules", ".bin", "opencode");
-  if (existsSync(localInstall)) bin = localInstall;
+  if (explicitBinary && existsSync(explicitBinary)) bin = explicitBinary;
+  if (!bin) {
+    const localInstall = join(projectDir, "node_modules", ".bin", "opencode");
+    if (existsSync(localInstall)) bin = localInstall;
+  }
   if (!bin) {
     const probe = spawnSync("sh", ["-c", "command -v opencode"], { encoding: "utf8" });
     if (probe.status === 0 && probe.stdout.trim()) bin = probe.stdout.trim();

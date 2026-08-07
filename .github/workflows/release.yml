@@ -449,9 +449,13 @@ jobs:
           # verify the 24-tool set is exposed via
           # /experimental/tool/ids. The smoke script lives in
           # the source tree so it shares the canonical 24-tool
-          # set with the local test.
+          # set with the local test. Pass the absolute path to
+          # the previously-installed opencode binary so the
+          # smoke does not need to search the consumer workspace
+          # (the binary lives at \$GITHUB_WORKSPACE/node_modules).
           HOME="${workspace}/home" node "$GITHUB_WORKSPACE/scripts/run-opencode-discovery-smoke.mjs" \
-            "${workspace}" "${MATRIX_OPENCODE}" "${MATRIX_PROFILE}"
+            "${workspace}" "${MATRIX_OPENCODE}" "${MATRIX_PROFILE}" \
+            "${GITHUB_WORKSPACE}/node_modules/.bin/opencode"
           popd
       - name: upload opencode-discovery log
         if: always()
