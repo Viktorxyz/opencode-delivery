@@ -741,22 +741,30 @@ jobs:
           attempt=0
           max_attempts=30
           delay=10
-          mkdir -p /tmp/post-publish
+          smoke_dir="/tmp/post-publish"
+          mkdir -p "${smoke_dir}"
           while (( attempt < max_attempts )); do
             attempt=$(( attempt + 1 ))
             echo "post-publish smoke attempt ${attempt}/${max_attempts}"
-            rm -rf /tmp/post-publish/node_modules /tmp/post-publish/package.json /tmp/post-publish/package-lock.json
+            rm -rf "${smoke_dir}/node_modules" "${smoke_dir}/package.json" "${smoke_dir}/package-lock.json"
             npm cache clean --force >/dev/null 2>&1 || true
-            if pushd /tmp/post-publish >/dev/null; then
-              if NODE_AUTH_TOKEN="" NPM_CONFIG_USERCONFIG=/dev/null npm install --no-save --no-audit --no-fund --prefer-online "opencode-ship@${PKG_VERSION}" >/tmp/post-publish/install.log 2>&1; then
-                if test -f node_modules/opencode-ship/package.json; then
-                  popd >/dev/null || true
-                  npx --no-install opencode-ship --version
-                  echo "post-publish smoke succeeded after ${attempt} attempt(s)"
-                  exit 0
-                fi
+            if (
+              set -euo pipefail
+              cd "${smoke_dir}"
+              NODE_AUTH_TOKEN="" NPM_CONFIG_USERCONFIG=/dev/null \
+                npm install --no-save --no-audit --no-fund --prefer-online \
+                  "opencode-ship@${PKG_VERSION}" >"${smoke_dir}/install.log" 2>&1
+              test -f "node_modules/opencode-ship/package.json"
+              test -x "node_modules/.bin/opencode-ship"
+              installed_version="$(node -p "require('./node_modules/opencode-ship/package.json').version")"
+              if [[ "${installed_version}" != "${PKG_VERSION}" ]]; then
+                echo "installed version ${installed_version} != expected ${PKG_VERSION}" >&2
+                exit 3
               fi
-              popd >/dev/null || true
+              ./node_modules/.bin/opencode-ship --version
+            ); then
+              echo "post-publish smoke succeeded after ${attempt} attempt(s)"
+              exit 0
             fi
             echo "attempt ${attempt} did not see opencode-ship@${PKG_VERSION}; waiting ${delay}s"
             sleep "${delay}"
@@ -764,7 +772,7 @@ jobs:
           echo "::error::post-publish smoke could not install opencode-ship@${PKG_VERSION} after ${max_attempts} attempts"
           echo "expected registry integrity: ${tarball_integrity}"
           echo "last install log:"
-          tail -50 /tmp/post-publish/install.log || true
+          tail -50 "${smoke_dir}/install.log" || true
           exit 2
       - name: publish release
         uses: softprops/action-gh-release@v2
