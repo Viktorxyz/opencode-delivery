@@ -773,6 +773,16 @@ jobs:
       TARBALL_NAME: ${{ needs.pack.outputs.tarball_name }}
       RELEASE_REF: ${{ needs.pack.outputs.release_ref }}
     steps:
+      - name: checkout
+        # The publish job needs the source tree to invoke
+        # scripts/is-prerelease.mjs and to read the runtime-source
+        # digest during the post-publish npm smoke. Without this
+        # step the runner has no source and `node
+        # scripts/is-prerelease.mjs` fails with MODULE_NOT_FOUND.
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - name: assert pack outputs are present
         run: |
           set -euo pipefail
