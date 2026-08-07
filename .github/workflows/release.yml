@@ -402,9 +402,14 @@ jobs:
         # `tests/plugin/expected-tools.mjs`.
         run: |
           set -euo pipefail
-          npm install --no-save --no-audit --no-fund "opencode-ai@${MATRIX_OPENCODE}"
-          command -v opencode
-          opencode --version
+          # Install into the runner's local node_modules so the
+          # bin link is reachable without polluting the global
+          # PATH. `npm install` (without --no-save) records the
+          # dependency so subsequent `npx opencode` invocations
+          # resolve through the same resolution path.
+          npm install --no-audit --no-fund "opencode-ai@${MATRIX_OPENCODE}"
+          ls node_modules/.bin/opencode
+          node_modules/.bin/opencode --version
         env:
           MATRIX_OPENCODE: ${{ matrix.opencode }}
       - name: run opencode discovery smoke
@@ -550,7 +555,17 @@ jobs:
           NODE_ENV: development
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ] || [ -f yarn.lock ]; then
-            npm ci --no-audit --no-fund --include=dev
+            # Use `npm install` (not `npm ci`) so Node 24 / npm 11
+            # accepts the lockfile that was generated on Node 22 /
+            # npm 10. `npm ci` in npm 11 requires every
+            # platform-specific optional dep (e.g. every
+            # `@esbuild/<os>-<arch>` binary) to be enumerated
+            # in the lockfile, but the locally-generated lock
+            # only records the current platform's binary. The
+            # lockfile is still authoritative — `npm install`
+            # honours the existing entries and only adds
+            # whatever the running Node needs.
+            npm install --no-audit --no-fund --include=dev --include=optional
           else
             echo "::error::No dependency lockfile. Commit package-lock.json."
             exit 1

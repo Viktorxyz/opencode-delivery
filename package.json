@@ -49,6 +49,7 @@
     "docs",
     "vendor",
     "tests/plugin/plugin-load.test.mjs",
+    "tests/plugin/expected-tools.mjs",
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
