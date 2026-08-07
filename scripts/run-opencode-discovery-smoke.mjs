@@ -53,18 +53,27 @@ if (!projectDir) {
 const logPath = join(tmpdir(), `opencode-discovery-${opencodeVersion}-${profile}.log`);
 const port = 15100 + Math.floor(Math.random() * 200);
 
-async function pollReady(timeoutMs = 90000) {
+async function pollReady(timeoutMs = 180000) {
   const start = Date.now();
   let lastErr = null;
   while (Date.now() - start < timeoutMs) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/experimental/tool/ids`, { method: "GET" });
-      if (r.ok) {
-        const body = await r.json();
-        if (Array.isArray(body) && body.length > 0) return body;
-        lastErr = new Error(`tool/ids returned ${JSON.stringify(body).slice(0, 80)}`);
-      } else {
-        lastErr = new Error(`status ${r.status}`);
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 30000);
+      try {
+        const r = await fetch(`http://127.0.0.1:${port}/experimental/tool/ids`, {
+          method: "GET",
+          signal: ac.signal,
+        });
+        if (r.ok) {
+          const body = await r.json();
+          if (Array.isArray(body) && body.length > 0) return body;
+          lastErr = new Error(`tool/ids returned ${JSON.stringify(body).slice(0, 80)}`);
+        } else {
+          lastErr = new Error(`status ${r.status}`);
+        }
+      } finally {
+        clearTimeout(timer);
       }
     } catch (e) {
       lastErr = e;
