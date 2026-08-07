@@ -680,18 +680,43 @@ jobs:
           esac
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "dist-tag for ${PKG_VERSION} = ${tag}"
-      - name: check npm version is unused
+      - name: check npm version against registry
+        id: npmcheck
         run: |
           set -euo pipefail
-          if npm view "opencode-ship@${PKG_VERSION}" version 2>/dev/null; then
-            echo "::error::npm already has opencode-ship@${PKG_VERSION}"
+          echo "skip_publish=false" >> "$GITHUB_OUTPUT"
+          tarball="./dist-pkg/${TARBALL_NAME}"
+          expected_integrity="sha512-$(openssl dgst -sha512 -binary "${tarball}" | openssl base64 -A)"
+          set +e
+          metadata_json="$(npm view "opencode-ship@${PKG_VERSION}" --json 2>/dev/null)"
+          view_status=$?
+          set -e
+          if [[ ${view_status} -ne 0 ]]; then
+            echo "registry has no record of opencode-ship@${PKG_VERSION}; will publish"
+            exit 0
+          fi
+          registry_integrity="$(printf '%s' "${metadata_json}" | node -e '
+            const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            process.stdout.write(data.dist && data.dist.integrity ? data.dist.integrity : "");
+          ')"
+          if [[ -z "${registry_integrity}" ]]; then
+            echo "::error::opencode-ship@${PKG_VERSION} already published with no integrity metadata; refusing to overwrite"
             exit 2
           fi
+          if [[ "${registry_integrity}" != "${expected_integrity}" ]]; then
+            echo "::error::opencode-ship@${PKG_VERSION} already published with different integrity"
+            echo "expected: ${expected_integrity}"
+            echo "registry: ${registry_integrity}"
+            exit 2
+          fi
+          echo "registry already has opencode-ship@${PKG_VERSION} with identical integrity; skipping publish"
+          echo "skip_publish=true" >> "$GITHUB_OUTPUT"
       - name: publish to npm
+        if: steps.npmcheck.outputs.skip_publish != 'true'
         run: |
           set -euo pipefail
-          # npm 11.5.2's npa parser interprets "dist-pkg/foo.tgz" as
-          # a git shorthand URL; it only recognises the argument as a
+          # npm 11.5.2's npa parser interprets "dist-pkg/foo.tgz" as a
+          # git shorthand URL; it only recognises the argument as a
           # local tarball when it starts with "./" or "/". We keep
           # the path relative to GITHUB_WORKSPACE so the step is
           # independent of the runner's $PWD, and we prefix with "./"
@@ -700,15 +725,47 @@ jobs:
           # --tag controls the dist-tag (next for RCs and 0.10.x,
           # candidate for 1.0.x, never latest).
           npm publish "${tarball}" --access public --provenance --tag "${{ steps.disttag.outputs.tag }}"
-      - name: post-publish npm smoke
+      - name: wait for registry propagation
+        if: steps.npmcheck.outputs.skip_publish != 'true'
         run: |
           set -euo pipefail
+          echo "sleeping 30s before post-publish smoke to allow registry propagation"
+          sleep 30
+      - name: post-publish npm smoke
+        env:
+          NODE_AUTH_TOKEN: ""
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          set -euo pipefail
+          tarball_integrity="sha512-$(openssl dgst -sha512 -binary "./dist-pkg/${TARBALL_NAME}" | openssl base64 -A)"
+          attempt=0
+          max_attempts=30
+          delay=10
           mkdir -p /tmp/post-publish
-          pushd /tmp/post-publish
-          npm install --no-save --no-audit --no-fund "opencode-ship@${PKG_VERSION}"
-          test -f node_modules/opencode-ship/package.json
-          npx --no-install opencode-ship --version
-          popd
+          while (( attempt < max_attempts )); do
+            attempt=$(( attempt + 1 ))
+            echo "post-publish smoke attempt ${attempt}/${max_attempts}"
+            rm -rf /tmp/post-publish/node_modules /tmp/post-publish/package.json /tmp/post-publish/package-lock.json
+            npm cache clean --force >/dev/null 2>&1 || true
+            if pushd /tmp/post-publish >/dev/null; then
+              if NODE_AUTH_TOKEN="" NPM_CONFIG_USERCONFIG=/dev/null npm install --no-save --no-audit --no-fund --prefer-online "opencode-ship@${PKG_VERSION}" >/tmp/post-publish/install.log 2>&1; then
+                if test -f node_modules/opencode-ship/package.json; then
+                  popd >/dev/null || true
+                  npx --no-install opencode-ship --version
+                  echo "post-publish smoke succeeded after ${attempt} attempt(s)"
+                  exit 0
+                fi
+              fi
+              popd >/dev/null || true
+            fi
+            echo "attempt ${attempt} did not see opencode-ship@${PKG_VERSION}; waiting ${delay}s"
+            sleep "${delay}"
+          done
+          echo "::error::post-publish smoke could not install opencode-ship@${PKG_VERSION} after ${max_attempts} attempts"
+          echo "expected registry integrity: ${tarball_integrity}"
+          echo "last install log:"
+          tail -50 /tmp/post-publish/install.log || true
+          exit 2
       - name: publish release
         uses: softprops/action-gh-release@v2
         with:
