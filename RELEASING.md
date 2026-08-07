@@ -1,10 +1,12 @@
 # Release runbook
 
 This document describes the operational steps required to publish
-`opencode-ship@0.10.0` and `opencode-ship@1.0.0`. **All implementation
-work is complete on the `release/1.0-completion` branch; the
-remaining work is operational and must be executed by the
-maintainer on a designated neutral disposable repository.**
+`opencode-ship@0.10.0` and `opencode-ship@1.0.0`. **The live
+release branch is `release/0.10.0`; the previously-mentioned
+`release/1.0-completion` branch is not the live release branch
+and is not referenced by this runbook.** Release candidates are
+published under the `next` npm dist-tag; the `latest` dist-tag
+remains at `0.9.0` until `1.0.0` is promoted.
 
 ## Status as of this commit
 
@@ -169,8 +171,12 @@ full dogfood. **Never** edit a published version.
 ## 1.0.0 promotion
 
 The 1.0.0 runtime is byte- and functionally equivalent to the
-dogfooded 0.10.0. Allowed changes are package/lock version, README
-status, this changelog, and the release metadata.
+dogfooded 0.10.0. The byte-equivalence witness is the
+`runtimeSourceSha256` recorded in the accepted `0.10.0`
+qualification artifact; the release-policy job refuses any
+`1.0.x` tag whose runtime-source digest does not match. Allowed
+changes are package/lock version, README status, this changelog,
+and the release metadata.
 
 ```sh
 # 1. Bump to 1.0.0 on a 1.0 promotion branch.
@@ -187,13 +193,14 @@ git push origin release/1.0.0
 git tag -s 1.0.0 -m "opencode-ship 1.0.0"
 git push origin 1.0.0
 
-# 3. The release workflow runs the ten qualification jobs. If
-#    any runtime patch was required, the entire dogfood must
-#    be re-run; promotion is refused.
+# 3. The release workflow runs the ten qualification jobs. The
+#    release-policy job computes the runtimeSourceSha256 from
+#    the current tree, fetches the accepted 0.10.0
+#    qualification artifact, and refuses the promotion unless
+#    the two digests match. If any runtime patch was required,
+#    the entire dogfood must be re-run and a fresh RC must
+#    publish before the 1.0 promotion can succeed.
 ```
-
-The `qualification-report` job's source-tag SHA must match the
-green 0.10.0 run. If it does not, the promotion is rejected.
 
 Promote to `latest` only after the qualification report is
 uploaded and the GitHub release is assigned:

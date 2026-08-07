@@ -155,7 +155,27 @@ test("neutral: uninstall removes the lock and the managed files", async (t) => {
   assert.equal(existsSync(join(repo, ".opencode/plugins/opencode-ship.js")), false, "uninstall must remove the plugin");
 });
 
+function ghAuthToken() {
+  // The doctor `gh auth status` check refuses to run unless
+  // GH_TOKEN / GITHUB_TOKEN is set in the environment, even when
+  // the host has a valid keyring session. The neutral-consumer
+  // qualification therefore has to materialise a real token from
+  // the existing keyring session so the doctor check has a
+  // chance to exit 0. CI runners must wire `${{
+  // secrets.GITHUB_TOKEN }}` (or equivalent) into
+  // `OPENCODE_SHIP_GH_TOKEN`; otherwise the test self-skips.
+  if (process.env.OPENCODE_SHIP_GH_TOKEN) return process.env.OPENCODE_SHIP_GH_TOKEN;
+  const probe = spawnSync("gh", ["auth", "token"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (probe.status === 0) return probe.stdout.trim();
+  return null;
+}
+
 test("neutral: doctor reports the active profile footprint", async (t) => {
+  const ghToken = ghAuthToken();
+  if (!ghToken) {
+    t.skip("gh auth token is not available; set OPENCODE_SHIP_GH_TOKEN to force");
+    return;
+  }
   const { tmp, consumer, packageDir } = await packAndExtract();
   t.after(async () => rm(tmp, { recursive: true, force: true }));
   const origin = await makeBareOrigin();
@@ -163,14 +183,85 @@ test("neutral: doctor reports the active profile footprint", async (t) => {
   const repo = await makeConsumerRepo(origin);
   t.after(async () => rm(repo, { recursive: true, force: true }));
 
-  spawnSync("node", [join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json", "--profile", "engineering"], { encoding: "utf8" });
+  // The engineering profile requires explicit model IDs before
+  // any write. This test asserts that the installer's `init`
+  // command succeeds only when those flags are present, then
+  // re-runs `doctor` and asserts both the install and the doctor
+  // report a noop profile footprint.
+  const init = spawnSync("node", [
+    join(packageDir, "dist/cli.js"),
+    "init", "--root", repo, "--json",
+    "--profile", "engineering",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ], { encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
   const r = spawnSync("node", [join(packageDir, "dist/cli.js"), "doctor", "--root", repo, "--json"], {
     encoding: "utf8",
-    env: { ...process.env, GH_TOKEN: "fake-token-for-test" },
+    env: { ...process.env, GH_TOKEN: ghToken },
   });
+  assert.equal(r.status, 0, `doctor must exit 0 after a clean engineering install; stderr=${r.stderr} stdout=${r.stdout}`);
   const out = JSON.parse(r.stdout);
   assert.ok(Array.isArray(out.plan));
   const footprint = out.plan.find((c) => c.target === "profile footprint");
   assert.ok(footprint);
   assert.equal(footprint.kind, "noop", `profile footprint check failed: ${footprint.reason}`);
+});
+
+test("neutral: engineering init without model IDs fails before any write", async (t) => {
+  // The engineering profile is fail-closed: when the consumer
+  // (or CI matrix lane) tries to install it without explicit
+  // model IDs, the installer must refuse and leave no managed
+  // files behind. This guards against a regression where the
+  // installer silently falls back to defaults and produces a
+  // half-configured engineering install.
+  const { tmp, consumer, packageDir } = await packAndExtract();
+  t.after(async () => rm(tmp, { recursive: true, force: true }));
+  const origin = await makeBareOrigin();
+  t.after(async () => rm(origin, { recursive: true, force: true }));
+  const repo = await makeConsumerRepo(origin);
+  t.after(async () => rm(repo, { recursive: true, force: true }));
+
+  const r = spawnSync("node", [
+    join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json",
+    "--profile", "engineering",
+  ], { encoding: "utf8" });
+  assert.notEqual(r.status, 0, `engineering init without models must fail; stdout=${r.stdout}`);
+  // The installer must not write any managed file when the
+  // engineering profile is missing required model IDs.
+  assert.equal(existsSync(join(repo, ".opencode/plugins/opencode-ship.js")), false, "plugin must not be written");
+  assert.equal(existsSync(join(repo, ".opencode/ship.lock.json")), false, "lock must not be written");
+  assert.equal(existsSync(join(repo, ".opencode/ship.config.json")), false, "ship config must not be written");
+});
+
+test("neutral: engineering init with partial model IDs fails before any write", async (t) => {
+  // The fail-closed check applies to every required role, not
+  // just to "all three missing". Supplying one or two IDs but
+  // omitting the rest must also refuse the install.
+  const { tmp, consumer, packageDir } = await packAndExtract();
+  t.after(async () => rm(tmp, { recursive: true, force: true }));
+  const origin = await makeBareOrigin();
+  t.after(async () => rm(origin, { recursive: true, force: true }));
+  const repo = await makeConsumerRepo(origin);
+  t.after(async () => rm(repo, { recursive: true, force: true }));
+
+  for (const missing of ["builder", "finalReviewer"]) {
+    const args = [
+      join(packageDir, "dist/cli.js"), "init", "--root", repo, "--json",
+      "--profile", "engineering",
+      "--planner-model", "fake/strong-planner",
+    ];
+    if (missing !== "builder") args.push("--builder-model", "fake/cheap-builder");
+    if (missing !== "finalReviewer") args.push("--final-reviewer-model", "fake/strong-reviewer");
+    const r = spawnSync("node", args, { encoding: "utf8" });
+    assert.notEqual(r.status, 0, `engineering init missing ${missing} must fail`);
+    assert.equal(existsSync(join(repo, ".opencode/plugins/opencode-ship.js")), false, `plugin must not be written when ${missing} is missing`);
+    assert.equal(existsSync(join(repo, ".opencode/ship.lock.json")), false, `lock must not be written when ${missing} is missing`);
+    // Reset between iterations so each missing-role case starts
+    // from a clean repo.
+    spawnSync("git", ["reset", "--hard"], { cwd: repo, env: process.env });
+    spawnSync("git", ["clean", "-fd"], { cwd: repo, env: process.env });
+  }
 });

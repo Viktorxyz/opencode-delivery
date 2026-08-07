@@ -21,6 +21,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { computeRuntimeSourceSha256 } from "./runtime-source-sha.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(__dirname, "..");
@@ -72,6 +73,11 @@ async function main() {
     pinPaths.map(async (rel) => ({ path: rel, sha256: await hashFile(resolve(REPO, rel)) })),
   );
 
+  // Version-independent runtime-source digest; the 1.0 promotion
+  // policy uses this to refuse any release whose source bytes
+  // differ from the accepted 0.10.0 release.
+  const runtimeDigest = await computeRuntimeSourceSha256({ repoRoot: REPO });
+
   // Tarball digest: the local `npm pack` output.
   const tmpPack = resolve(repoRoot, "dist-pkg");
   await mkdir(tmpPack, { recursive: true });
@@ -100,6 +106,8 @@ async function main() {
       git: gitVersion,
       npm: npmVersion,
     },
+    runtimeSourceSha256: runtimeDigest.digest,
+    runtimeSourceFiles: runtimeDigest.files,
     gates,
     pins,
     tarball,

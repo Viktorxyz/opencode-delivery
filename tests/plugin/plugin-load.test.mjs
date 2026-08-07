@@ -7,41 +7,21 @@
  *   - calling it returns an object with a `tool` key
  *   - the `tool` object exposes exactly the 24 named tool
  *     definitions (9 delivery + 7 control-plane + 8 workflow)
+ *
+ * The canonical 24-tool set is imported from
+ * `tests/plugin/expected-tools.mjs`, the single source of truth
+ * shared with the opencode-discovery smoke test.
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { EXPECTED_OPENCODE_SHIP_TOOL_IDS, OPENCODE_SHIP_TOOL_COUNT } from "./expected-tools.mjs";
 
 const pluginPath = pathToFileURL(resolve("dist/plugin.js")).href;
 
-const EXPECTED_TOOLS = [
-  "delivery_cleanup",
-  "delivery_github_read",
-  "delivery_inspect",
-  "delivery_issue",
-  "delivery_issue_close",
-  "delivery_issue_comment",
-  "delivery_issue_labels",
-  "delivery_issue_link",
-  "delivery_merge",
-  "delivery_pr",
-  "delivery_publish",
-  "delivery_ready",
-  "delivery_review",
-  "delivery_sync",
-  "delivery_verify",
-  "delivery_worktree",
-  "ship_plan_approve",
-  "ship_plan_start",
-  "ship_plan_submit",
-  "ship_resume",
-  "ship_run_start",
-  "ship_status",
-  "ship_task_report",
-  "ship_task_review",
-];
+const EXPECTED_TOOLS = EXPECTED_OPENCODE_SHIP_TOOL_IDS;
 
 test("plugin: default export is a function", async () => {
   const mod = await import(pluginPath);
@@ -60,7 +40,7 @@ test("plugin: registers exactly 24 tools", async () => {
   const result = await mod.default(fakeCtx);
   assert.ok(result.tool, "result.tool should exist");
   const ids = Object.keys(result.tool).sort();
-  assert.deepEqual(ids, EXPECTED_TOOLS, `expected 24 tools, got ${ids.length}: ${ids.join(", ")}`);
+  assert.deepEqual(ids, EXPECTED_TOOLS, `expected ${OPENCODE_SHIP_TOOL_COUNT} tools, got ${ids.length}: ${ids.join(", ")}`);
   for (const id of ids) {
     assert.equal(typeof result.tool[id].execute, "function", `${id} should expose an execute function`);
     assert.equal(typeof result.tool[id].description, "string", `${id} should expose a description`);
