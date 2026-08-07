@@ -54,7 +54,7 @@ async function main() {
       });
       return;
     case "diff":
-      await runDiff({ json: !!opts.json, rootPath: opts.rootPath, profile });
+      await runDiff({ json: !!opts.json, rootPath: opts.rootPath, profile, models: hasModels ? models : null });
       return;
     case "update":
       await runUpdate({

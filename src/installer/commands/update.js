@@ -24,6 +24,7 @@ export async function runUpdate(options) {
     replaceManaged: options.replaceManaged,
     forceConfig: options.forceConfig,
     forceRootConfig: options.forceRootConfig,
+    models: options.models ?? null,
   });
   if (!preview.ok) {
     if (preview.error?.kind === "unsupported-lock-schema") {

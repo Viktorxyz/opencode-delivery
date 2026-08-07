@@ -56,6 +56,7 @@ export async function runDiff(options) {
     replaceManaged: false,
     forceConfig: false,
     forceRootConfig: false,
+    models: options.models ?? null,
   });
   if (!preview.ok) {
     const exitCode = preview.error?.kind === "unsupported-lock-schema" ? 5
