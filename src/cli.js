@@ -35,15 +35,37 @@ async function main() {
   const options = parsed.options ?? {};
   /** @type {any} */ const opts = options;
   const profile = opts.profile ?? null;
+  const models = {
+    planner: opts.plannerModel ?? null,
+    builder: opts.builderModel ?? null,
+    finalReviewer: opts.finalReviewerModel ?? null,
+  };
+  const hasModels = Boolean(models.planner || models.builder || models.finalReviewer);
   switch (parsed.command) {
     case "init":
-      await runInit({ json: !!opts.json, rootPath: opts.rootPath, profile, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig, strictDoctor: !!opts.strictDoctor });
+      await runInit({
+        json: !!opts.json,
+        rootPath: opts.rootPath,
+        profile,
+        forceConfig: !!opts.forceConfig,
+        forceRootConfig: !!opts.forceRootConfig,
+        strictDoctor: !!opts.strictDoctor,
+        models: hasModels ? models : null,
+      });
       return;
     case "diff":
-      await runDiff({ json: !!opts.json, rootPath: opts.rootPath, profile });
+      await runDiff({ json: !!opts.json, rootPath: opts.rootPath, profile, models: hasModels ? models : null });
       return;
     case "update":
-      await runUpdate({ json: !!opts.json, rootPath: opts.rootPath, profile, replaceManaged: !!opts.replaceManaged, forceConfig: !!opts.forceConfig, forceRootConfig: !!opts.forceRootConfig });
+      await runUpdate({
+        json: !!opts.json,
+        rootPath: opts.rootPath,
+        profile,
+        replaceManaged: !!opts.replaceManaged,
+        forceConfig: !!opts.forceConfig,
+        forceRootConfig: !!opts.forceRootConfig,
+        models: hasModels ? models : null,
+      });
       return;
     case "doctor":
       await runDoctor({ json: !!opts.json, rootPath: opts.rootPath, profile });

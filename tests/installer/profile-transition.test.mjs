@@ -43,7 +43,13 @@ test("init: core profile installs only the core entries", async (t) => {
 test("init: engineering profile installs the engineering-only entries", async (t) => {
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
-  const r = cli(repoRoot, ["init", "--profile", "engineering", "--json"]);
+  const r = cli(repoRoot, [
+    "init", "--profile", "engineering", "--json",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ]);
   assert.equal(r.code, 0, r.stderr);
   for (const p of [".opencode/skills/triage/SKILL.md", ".opencode/skills/grill-with-docs/SKILL.md"]) {
     assert.ok(existsSync(join(repoRoot, p)), `engineering profile must install ${p}`);
@@ -56,7 +62,12 @@ test("init: lock manager.profile transitions core → engineering correctly", as
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
   cli(repoRoot, ["init", "--profile", "core", "--json"]);
-  const r2 = cli(repoRoot, ["init", "--profile", "engineering", "--json"]);
+  const r2 = cli(repoRoot, [
+    "init", "--profile", "engineering", "--json",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+  ]);
   assert.equal(r2.code, 0, r2.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lock.manager.profile, "engineering");

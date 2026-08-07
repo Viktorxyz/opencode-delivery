@@ -56,6 +56,7 @@ export async function runDiff(options) {
     replaceManaged: false,
     forceConfig: false,
     forceRootConfig: false,
+    models: options.models ?? null,
   });
   if (!preview.ok) {
     const exitCode = preview.error?.kind === "unsupported-lock-schema" ? 5
@@ -94,7 +95,7 @@ export async function runDiff(options) {
     const head = "# opencode-ship diff";
     const lines = [head, "", "## Plan"];
     for (const op of plan.filter(Boolean)) {
-      const bytesHint = op.bytes ? `${(op.bytes.length ?? 0)}b` : "";
+      const bytesHint = /** @type {any} */ (op).bytes ? `${(/** @type {any} */ (op).bytes.length ?? 0)}b` : "";
       lines.push(`  - ${op.kind.padEnd(9)} ${op.op} ${op.relPath ?? op.target}${bytesHint ? ` (${bytesHint})` : ""}${op.reason ? ` — ${op.reason}` : ""}`);
     }
     if (conflicts.length) {

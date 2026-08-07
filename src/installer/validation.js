@@ -27,6 +27,18 @@ function validate(value, schema, pointer, issues) {
     issues.push(`${pointer}: expected one of ${JSON.stringify(schema.enum)}, got ${JSON.stringify(value)}`);
     return;
   }
+  if (Array.isArray(schema.allOf)) {
+    for (const sub of schema.allOf) validate(value, sub, pointer, issues);
+  }
+  if (isObject(schema.if)) {
+    const ifIssues = [];
+    validate(value, schema.if, pointer, ifIssues);
+    if (ifIssues.length === 0) {
+      if (isObject(schema.then)) validate(value, schema.then, pointer, issues);
+    } else if (isObject(schema.else)) {
+      validate(value, schema.else, pointer, issues);
+    }
+  }
   const type = schema.type;
   if (type !== undefined) {
     const actual = Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
@@ -79,7 +91,7 @@ function validate(value, schema, pointer, issues) {
       value.forEach((entry, i) => validate(entry, schema.items, `${pointer}/${i}`, issues));
     }
   }
-  if (type === "object") {
+  if (type === "object" || isObject(schema.properties) || Array.isArray(schema.required)) {
     if (Array.isArray(schema.required)) {
       for (const key of schema.required) {
         if (!(key in value)) issues.push(`${pointer}: missing required field ${key}`);

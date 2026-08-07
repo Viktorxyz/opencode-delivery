@@ -91,6 +91,15 @@ export function stableStringify(value) {
   return JSON.stringify(value);
 }
 
+/**
+ * Canonical JSON for hashing: UTF-8 encoded, sorted keys,
+ * no whitespace. Identical to `stableStringify` but tagged as
+ * a separate function for clarity in plan-mirror call sites.
+ */
+export function canonicalJson(value) {
+  return stableStringify(value);
+}
+
 export function pointerPath(segments) {
   return "/" + segments.map((s) => escape(String(s))).join("/");
 }

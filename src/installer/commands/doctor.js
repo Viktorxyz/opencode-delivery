@@ -85,9 +85,12 @@ function buildSourceHashIndex() {
   return idx;
 }
 
-function checkCatalogInstall(repoRoot, sourceHashes) {
+function checkCatalogInstall(repoRoot, sourceHashes, profile) {
   const rows = [];
-  for (const entry of CATALOG) {
+  const scoped = profile
+    ? filterCatalogByProfile(CATALOG, profile)
+    : CATALOG;
+  for (const entry of scoped) {
     const target = resolve(repoRoot, entry.path);
     if (!existsSync(target)) {
       rows.push(`${entry.id}: missing`);
@@ -108,7 +111,7 @@ function checkCatalogInstall(repoRoot, sourceHashes) {
   }
   const allOk = rows.length === 0 || rows.every((r) => r.endsWith("ok"));
   return {
-    name: "catalog assets present",
+    name: `catalog assets present (${profile ?? "core"})`,
     ok: allOk,
     detail: rows.join(","),
   };
@@ -250,7 +253,7 @@ export async function runDoctor({ rootPath, profile, json, writeOutput = true })
     checkGh(),
     checkGhAuth(),
     packageIntegrity,
-    checkCatalogInstall(repoRoot, sourceHashes),
+    checkCatalogInstall(repoRoot, sourceHashes, resolved.profile),
     await checkLock(repoRoot),
     await checkConfig(repoRoot),
     await checkManagedHashes(repoRoot, validatedLock),

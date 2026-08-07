@@ -10,6 +10,9 @@ const EXTS = new Set([".js", ".mjs", ".ts", ".md", ".json"]);
 // must not be linted against the rules.
 const WHITELIST = new Set([
   "scripts/lint.mjs",
+  "scripts/vendor-sync.mjs",
+  "tests/instrument/envelope-and-policy.test.mjs",
+  "src/drivers/github-command-policy.js",
   // Documentation files describe the policy in prose; they are not
   // shell invocations. Markdown content is not runnable.
 ]);

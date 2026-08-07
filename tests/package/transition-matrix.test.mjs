@@ -42,7 +42,13 @@ test("transition matrix: core init omits engineering-only files", async (t) => {
 test("transition matrix: engineering init adds engineering-only files", async (t) => {
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
-  const r = cli(repoRoot, ["init", "--profile", "engineering", "--json"]);
+  const r = cli(repoRoot, [
+    "init", "--profile", "engineering", "--json",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ]);
   assert.equal(r.code, 0, r.stderr);
   for (const f of [
     ".opencode/skills/triage/SKILL.md",
@@ -59,7 +65,12 @@ test("transition matrix: lock manager.profile matches the active profile", async
   cli(repoRoot, ["init", "--profile", "core", "--json"]);
   const lockCore = JSON.parse(await readFile(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lockCore.manager.profile, "core");
-  cli(repoRoot, ["init", "--profile", "engineering", "--json"]);
+  cli(repoRoot, [
+    "init", "--profile", "engineering", "--json",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+  ]);
   const lockEng = JSON.parse(await readFile(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lockEng.manager.profile, "engineering");
 });

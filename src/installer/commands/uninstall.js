@@ -1,20 +1,25 @@
 /*
  * opencode-ship command: uninstall.
  *
- * Removes managed files whose bytes still match the lock, then
- * unlinks the lock itself. user-owned `ship.config.json` is
- * preserved unless `--purge-config` is supplied. Exit 3 on conflict.
+ * Removes managed files whose bytes still match the lock,
+ * restores the consumer's root opencode.json to its preinstall
+ * state using the previously recorded `previous` values, and
+ * unlinks the lock itself. All file operations, the root-config
+ * restoration, and the lock deletion are part of a single
+ * transactional plan so a crash mid-uninstall leaves a
+ * recoverable journal.
+ *
+ * user-owned `ship.config.json` is preserved unless
+ * `--purge-config` is supplied. Exit 3 on conflict.
  */
 
 import { executePlan } from "../transaction.js";
 import { unlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { previewUninstall } from "../executor.js";
 import { configPath } from "../config.js";
+import { previewUninstall } from "../executor.js";
 
 export async function runUninstall(options) {
-  const preview = await previewUninstall({ rootPath: options.rootPath, profile: options.profile ?? null });
+  const preview = await previewUninstall({ rootPath: options.rootPath });
   if (!preview.ok) {
     if (preview.error?.kind === "unsupported-lock-schema") {
       return emitFailure(5, `unsupported lock schema: ${(preview.error.issues ?? []).join("; ")}`, options.json);
@@ -25,17 +30,25 @@ export async function runUninstall(options) {
     return emitFailure(2, preview.error?.kind ?? "invalid-project", options.json);
   }
   const { repoRoot, plan, conflicts, summary } = preview;
+  // Append a transactional config-purge step inside the same plan so
+  // the ship.config.json removal is part of the journaled transaction
+  // (crash-safe, rollback-aware) rather than a post-transaction unlink.
+  if (options.purgeConfig) {
+    const cfg = configPath(repoRoot);
+    plan.push({
+      op: "file",
+      kind: "delete",
+      target: cfg,
+      relPath: ".opencode/ship.config.json",
+      reason: "purge user-owned ship.config.json",
+    });
+  }
   if (conflicts.length > 0) {
     return emitReport(plan, conflicts, summary, options.json, 3, ["modified managed files; refusing to delete"]);
   }
   const tx = await executePlan({ repoRoot, plan, newLockBuilder: null });
   if (!tx.ok) {
     return emitFailure(4, tx.error?.message ?? "transaction failure", options.json);
-  }
-  const lockPath = resolve(repoRoot, ".opencode", "ship.lock.json");
-  if (existsSync(lockPath)) await unlink(lockPath).catch(() => null);
-  if (options.purgeConfig) {
-    await unlink(configPath(repoRoot)).catch(() => null);
   }
   return emitReport(plan, [], summary, options.json, 0, [tx.recovered ? "journal recovered before uninstall" : ""].filter(Boolean));
 }

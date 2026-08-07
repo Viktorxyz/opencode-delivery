@@ -79,6 +79,10 @@ export function validateManifest(raw) {
     const reuseMode = requireString(e, "reuseMode", issues);
     const license = requireString(e, "license", issues);
     const adaptationNote = requireString(e, "adaptationNote", issues);
+    const localSha256 = e.localSha256 === undefined ? null : e.localSha256;
+    if (localSha256 !== null && typeof localSha256 !== "string") {
+      issues.push(`localSha256 must be a string when present: ${localSha256}`);
+    }
     if (issues.length > entryIssuesBefore) kind = "shape";
     if (!REUSE_MODES.has(reuseMode)) {
       issues.push(`unknown reuseMode: ${JSON.stringify(reuseMode)} (expected one of: ${[...REUSE_MODES].join(", ")})`);
@@ -86,6 +90,10 @@ export function validateManifest(raw) {
     }
     if (sourceSha256 && !HEX64.test(sourceSha256)) {
       issues.push(`sourceSha256 is not a 64-char hex string: ${sourceSha256}`);
+      kind = "shape";
+    }
+    if (localSha256 && !HEX64.test(localSha256)) {
+      issues.push(`localSha256 is not a 64-char hex string: ${localSha256}`);
       kind = "shape";
     }
     if (localTarget && seenTargets.has(localTarget)) {
@@ -124,6 +132,13 @@ export async function loadManifest(manifestPath) {
 /**
  * Hash the file on disk and compare it to the manifest's
  * recorded sourceSha256. Returns `{ ok, actual, expected }`.
+ *
+ * Adapted files ship with a `localSha256` field; the integrity
+ * check verifies the upstream snapshot under
+ * `vendor/upstreams/<owner>/<upstreamPath>` against
+ * `sourceSha256` and the local file against `localSha256`. The
+ * legacy `unchanged` reuse mode skips the snapshot check (the
+ * local file IS the snapshot).
  */
 export async function verifyManifestIntegrity(manifest, repoRoot) {
   if (!manifest || !Array.isArray(manifest.sources)) {
@@ -137,10 +152,37 @@ export async function verifyManifestIntegrity(manifest, repoRoot) {
       missing.push(e.localTarget);
       continue;
     }
-    const buf = await readFile(target);
-    const actual = bytesHash(buf);
-    if (actual !== e.sourceSha256) {
-      mismatches.push({ target: e.localTarget, expected: e.sourceSha256, actual });
+    if (e.reuseMode === "unchanged") {
+      const buf = await readFile(target);
+      const actual = bytesHash(buf);
+      if (actual !== e.sourceSha256) {
+        mismatches.push({ target: e.localTarget, expected: e.sourceSha256, actual });
+      }
+      continue;
+    }
+    // Adapted or ported: verify the upstream snapshot hash and
+    // (when present) the local file hash. The local file is
+    // expected to differ from the upstream snapshot; it is
+    // expected to match `localSha256` when the manifest records
+    // it. Manifests without `localSha256` skip the local check.
+    const owner = String(e.repository ?? "").split("/")[0];
+    const snapshot = owner ? resolve(repoRoot, "vendor", "upstreams", owner, e.upstreamPath) : null;
+    if (snapshot && existsSync(snapshot)) {
+      const actualSnap = bytesHash(await readFile(snapshot));
+      if (actualSnap !== e.sourceSha256) {
+        mismatches.push({ target: e.localTarget, expected: e.sourceSha256, actual: actualSnap, kind: "snapshot" });
+      }
+    } else {
+      // Snapshot must exist for an adapted vendoring; the
+      // closure test asserts the same.
+      mismatches.push({ target: e.localTarget, expected: "snapshot-present", actual: "missing", kind: "snapshot" });
+    }
+    if (e.localSha256) {
+      const buf = await readFile(target);
+      const actualLocal = bytesHash(buf);
+      if (actualLocal !== e.localSha256) {
+        mismatches.push({ target: e.localTarget, expected: e.localSha256, actual: actualLocal, kind: "local" });
+      }
     }
   }
   return { ok: mismatches.length === 0 && missing.length === 0, mismatches, missing };

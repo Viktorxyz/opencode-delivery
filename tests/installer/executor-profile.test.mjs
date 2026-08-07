@@ -36,12 +36,20 @@ async function initWith(repoRoot, extra = []) {
 test("init: --profile engineering writes manager.profile=engineering in the lock", async (t) => {
   const { parent, repoRoot } = await makeProject();
   t.after(async () => cleanProject(parent));
-  const r = await initWith(repoRoot, ["--profile", "engineering"]);
+  // The engineering profile requires explicit models now; the
+  // fail-closed planner rejects the install without them.
+  const r = await initWith(repoRoot, [
+    "--profile", "engineering",
+    "--planner-model", "fake/strong-planner",
+    "--builder-model", "fake/cheap-builder",
+    "--final-reviewer-model", "fake/strong-reviewer",
+    "--force-config",
+  ]);
   assert.equal(r.code, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
   assert.equal(lock.manager.profile, "engineering");
-  assert.equal(lock.contractVersion, 2);
-  assert.equal(lock.manager.schemaVersion, 2);
+  assert.equal(lock.contractVersion, 3);
+  assert.equal(lock.manager.schemaVersion, 3);
 });
 
 test("init: --profile core writes manager.profile=core in the lock", async (t) => {
@@ -67,12 +75,12 @@ test("init: ship.config.json .profile=core wins over a v0.3 lock without profile
   await writeFileTo(
     repoRoot,
     ".opencode/ship.config.json",
-    JSON.stringify({ schemaVersion: 1, profile: "engineering" }, null, 2) + "\n",
+    JSON.stringify({ schemaVersion: 1, profile: "core" }, null, 2) + "\n",
   );
   const r = await initWith(repoRoot);
   assert.equal(r.code, 0, r.stderr);
   const lock = JSON.parse(readFileSync(join(repoRoot, ".opencode/ship.lock.json"), "utf8"));
-  assert.equal(lock.manager.profile, "engineering");
+  assert.equal(lock.manager.profile, "core");
 });
 
 test("init: ship.config.json .profile=engineering with no CLI flag persists the choice", async (t) => {
