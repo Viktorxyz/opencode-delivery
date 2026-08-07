@@ -450,7 +450,7 @@ jobs:
           # /experimental/tool/ids. The smoke script lives in
           # the source tree so it shares the canonical 24-tool
           # set with the local test.
-          HOME="${workspace}/home" node scripts/run-opencode-discovery-smoke.mjs \
+          HOME="${workspace}/home" node "$GITHUB_WORKSPACE/scripts/run-opencode-discovery-smoke.mjs" \
             "${workspace}" "${MATRIX_OPENCODE}" "${MATRIX_PROFILE}"
           popd
       - name: upload opencode-discovery log
