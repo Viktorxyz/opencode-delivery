@@ -84,16 +84,23 @@ async function stopServer(proc, deadlineMs = 5000) {
 }
 
 async function main() {
-  // Discover the opencode binary in the runner's PATH (npm
-  // installs the opencode-ai package globally for the matrix
-  // step). Fall back to the well-known user location so local
-  // re-runs can use the same script.
+  // Discover the opencode binary. The CI workflow installs
+  // opencode-ai into the consumer workspace's node_modules via
+  // `npm install --no-save`, so the canonical location is
+  // `<projectDir>/node_modules/.bin/opencode`. Local developer
+  // runs also resolve from PATH (`command -v opencode`) and the
+  // well-known user install location (`~/.opencode/bin/opencode`)
+  // for parity.
   let bin = null;
-  const probe = spawnSync("sh", ["-c", "command -v opencode"], { encoding: "utf8" });
-  if (probe.status === 0 && probe.stdout.trim()) bin = probe.stdout.trim();
+  const localInstall = join(projectDir, "node_modules", ".bin", "opencode");
+  if (existsSync(localInstall)) bin = localInstall;
   if (!bin) {
-    const local = join(homedir(), ".opencode", "bin", "opencode");
-    if (existsSync(local)) bin = local;
+    const probe = spawnSync("sh", ["-c", "command -v opencode"], { encoding: "utf8" });
+    if (probe.status === 0 && probe.stdout.trim()) bin = probe.stdout.trim();
+  }
+  if (!bin) {
+    const homeBin = join(homedir(), ".opencode", "bin", "opencode");
+    if (existsSync(homeBin)) bin = homeBin;
   }
   if (!bin) {
     console.error("run-opencode-discovery-smoke: opencode binary not on PATH");
