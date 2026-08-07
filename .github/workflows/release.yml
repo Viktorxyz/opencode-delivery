@@ -430,36 +430,18 @@ jobs:
           git config user.email "ci@local"
           git config user.name "ci"
           echo "# opencode-discovery" > README.md
-          # Always materialise the user config with explicit model
-          # IDs so the engineering profile writes succeed; the
-          # core profile ignores the workflow block.
-          node -e '
-            const fs = require("fs");
-            fs.writeFileSync(
-              ".opencode/ship.config.json",
-              JSON.stringify({
-                schemaVersion: 2,
-                profile: process.env.MATRIX_PROFILE,
-                workflow: {
-                  models: {
-                    planner: "fake/strong-planner",
-                    builder: "fake/cheap-builder",
-                    finalReviewer: "fake/strong-reviewer",
-                  },
-                  approval: { mirrorToIssue: true, maxFailedRounds: 3 },
-                },
-              }, null, 2) + "\n",
-            );
-          '
+          # Install the packed tarball and let the installer's
+          # own CLI materialise the user config + lock so the
+          # engineering profile has explicit model IDs and the
+          # core profile only writes its minimal footprint.
+          npm install --no-save --no-audit --no-fund "${tarball}"
           if [[ "${MATRIX_PROFILE}" == "engineering" ]]; then
-            npm install --no-save --no-audit --no-fund "${tarball}"
             npx --yes opencode-ship init --json --profile engineering \
               --planner-model fake/strong-planner \
               --builder-model fake/cheap-builder \
               --final-reviewer-model fake/strong-reviewer \
               --force-config
           else
-            npm install --no-save --no-audit --no-fund "${tarball}"
             npx --yes opencode-ship init --json --profile core
           fi
           # Start the opencode server with an isolated HOME so
