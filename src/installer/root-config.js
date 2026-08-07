@@ -178,7 +178,12 @@ export function applyOwnedPointers(rootDoc, { pointerEntries = POINTER_ENTRIES, 
       result.applied.push({ pointer: entry.pointer, value: entry.value });
       continue;
     }
-    if (existing === entry.value) {
+    if (existing === entry.value || stableStringify(existing) === stableStringify(entry.value)) {
+      // Deep-equal values are treated as already equal even when
+      // they come from a fresh object literal (the engineering
+      // permission block is rebuilt on every call). Reference
+      // equality alone would mis-report every install as a
+      // conflict once the value was materialised once.
       if (allowEqualValues) {
         result.skipped.push({ pointer: entry.pointer, reason: "already equal" });
       }
