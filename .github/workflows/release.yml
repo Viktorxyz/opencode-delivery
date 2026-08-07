@@ -369,6 +369,111 @@ jobs:
           # intentionally omitted here: the test only consumes the
           # packed tarball, which already carries its own binaries.
 
+  opencode-discovery:
+    name: opencode-discovery
+    runs-on: ubuntu-latest
+    needs: pack
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        opencode: ["1.15.5", "1.18.10"]
+        profile: [core, engineering]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: download pack
+        uses: actions/download-artifact@v4
+        with:
+          name: pack
+          path: dist-pkg/
+      - name: setup-node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+      - name: install pinned opencode CLI
+        # Real OpenCode startup + discovery smoke. The packaged
+        # plugin must boot a real opencode serve process and the
+        # server must expose exactly the 24 opencode-ship tools.
+        # The local test `tests/release/opencode-discovery.test.mjs`
+        # pins the canonical 24-tool set in
+        # `tests/plugin/expected-tools.mjs`.
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund "opencode-ai@${MATRIX_OPENCODE}"
+          command -v opencode
+          opencode --version
+        env:
+          MATRIX_OPENCODE: ${{ matrix.opencode }}
+      - name: run opencode discovery smoke
+        env:
+          MATRIX_OPENCODE: ${{ matrix.opencode }}
+          MATRIX_PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          tarball="$(realpath "$(ls dist-pkg/opencode-ship-*.tgz | head -1)")"
+          # Each (opencode, profile) matrix row runs in its own
+          # consumer workspace so the opencode.json + project
+          # bootstrap does not leak across rows.
+          workspace="/tmp/opencode-discovery-${MATRIX_OPENCODE}-${MATRIX_PROFILE}"
+          rm -rf "${workspace}"
+          mkdir -p "${workspace}"
+          pushd "${workspace}"
+          git init -q --initial-branch main
+          git config user.email "ci@local"
+          git config user.name "ci"
+          echo "# opencode-discovery" > README.md
+          # Always materialise the user config with explicit model
+          # IDs so the engineering profile writes succeed; the
+          # core profile ignores the workflow block.
+          node -e '
+            const fs = require("fs");
+            fs.writeFileSync(
+              ".opencode/ship.config.json",
+              JSON.stringify({
+                schemaVersion: 2,
+                profile: process.env.MATRIX_PROFILE,
+                workflow: {
+                  models: {
+                    planner: "fake/strong-planner",
+                    builder: "fake/cheap-builder",
+                    finalReviewer: "fake/strong-reviewer",
+                  },
+                  approval: { mirrorToIssue: true, maxFailedRounds: 3 },
+                },
+              }, null, 2) + "\n",
+            );
+          '
+          if [[ "${MATRIX_PROFILE}" == "engineering" ]]; then
+            npm install --no-save --no-audit --no-fund "${tarball}"
+            npx --yes opencode-ship init --json --profile engineering \
+              --planner-model fake/strong-planner \
+              --builder-model fake/cheap-builder \
+              --final-reviewer-model fake/strong-reviewer \
+              --force-config
+          else
+            npm install --no-save --no-audit --no-fund "${tarball}"
+            npx --yes opencode-ship init --json --profile core
+          fi
+          # Start the opencode server with an isolated HOME so
+          # the global config cannot leak into the test, and
+          # verify the 24-tool set is exposed via
+          # /experimental/tool/ids. The smoke script lives in
+          # the source tree so it shares the canonical 24-tool
+          # set with the local test.
+          HOME="${workspace}/home" node scripts/run-opencode-discovery-smoke.mjs \
+            "${workspace}" "${MATRIX_OPENCODE}" "${MATRIX_PROFILE}"
+          popd
+      - name: upload opencode-discovery log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-discovery-${{ matrix.opencode }}-${{ matrix.profile }}
+          path: /tmp/opencode-discovery-*.log
+          retention-days: 7
+
   opencode-compat:
     name: opencode-compat
     runs-on: ubuntu-latest
@@ -432,7 +537,13 @@ jobs:
       - name: setup-node
         uses: actions/setup-node@v4
         with:
-          node-version: "22.14.0"
+          # Real Node compatibility: each matrix row installs the
+          # declared runtime. The trusted-publishing publish job is
+          # the only one that pins Node 22.14.0 because npm OIDC
+          # requires it. The static policy test
+          # `tests/release/node-compat-policy.test.mjs` proves the
+          # matrix is not ignored.
+          node-version: ${{ matrix.node }}
       - name: install dependencies
         env:
           NPM_CONFIG_PRODUCTION: "false"
@@ -452,6 +563,27 @@ jobs:
         run: npm run typecheck
       - name: test
         run: npm run test
+      - name: record observed Node version
+        # Capture the runtime that actually executed this matrix row
+        # so the qualification report can prove the matrix drove
+        # setup-node (not a hard-coded fallback). The artifact is
+        # named after the declared matrix.node value so the
+        # qualification-report job can aggregate one row per entry.
+        run: |
+          set -euo pipefail
+          mkdir -p dist-pkg/node-versions
+          printf '%s\n' "${{ matrix.node }}" > dist-pkg/node-versions/${MATRIX_NODE}.declared
+          node --version > dist-pkg/node-versions/${MATRIX_NODE}.observed
+          printf 'sha256:%s\n' "$(sha256sum dist-pkg/node-versions/${MATRIX_NODE}.observed | awk '{print $1}')" \
+            > dist-pkg/node-versions/${MATRIX_NODE}.observed.sha256
+        env:
+          MATRIX_NODE: ${{ matrix.node }}
+      - name: upload observed node versions
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-versions
+          path: dist-pkg/node-versions/
+          retention-days: 14
 
   release-policy:
     name: release-policy
@@ -521,11 +653,29 @@ jobs:
             echo "::error::placeholder markers found in shipped assets"
             exit 2
           fi
+      - name: validate 1.0 promotion digest (1.0.x tags only)
+        # The plan requires the `1.0.x` runtime to be byte-equivalent
+        # to the accepted `0.10.0` release. The witness is the
+        # `runtimeSourceSha256` recorded in the accepted `0.10.0`
+        # qualification artifact. For non-1.0 tags this step is a
+        # no-op so it does not gate RC/stable 0.10.x releases.
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "${TAG}" in
+            1.0.*) ;;
+            *) echo "tag ${TAG} is not 1.0.x; skipping digest gate"; exit 0;;
+          esac
+          runtime_source_sha="$(node scripts/runtime-source-sha.mjs)"
+          echo "runtime-source digest: ${runtime_source_sha}"
+          node scripts/promote-1.0-policy.mjs "Viktorxyz/opencode-ship" "${runtime_source_sha}"
 
   qualification-report:
     name: qualification-report
     runs-on: ubuntu-latest
-    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-compat, node-compat, release-policy]
+    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-discovery, opencode-compat, node-compat, release-policy]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -539,6 +689,11 @@ jobs:
         with:
           name: pack
           path: dist-pkg/
+      - name: download node-versions
+        uses: actions/download-artifact@v4
+        with:
+          name: node-versions
+          path: dist-pkg/node-versions/
       - name: compose report
         run: |
           ver="$(node scripts/get-version.mjs)"
@@ -551,6 +706,17 @@ jobs:
           # so the report matches the npm registry integrity field.
           npm_integrity="sha512-$(openssl dgst -sha512 -binary ${tarball} | openssl base64 -A)"
           gate_head="$(git rev-parse HEAD)"
+          # Aggregate one row per matrix.node from the node-versions
+          # artifact uploaded by the node-compat job. The local
+          # test `tests/release/node-compat-policy.test.mjs` proves
+          # the workflow drives setup-node from this matrix.
+          node_versions_json="$(node scripts/compose-node-versions.mjs dist-pkg/node-versions)"
+          # runtimeSourceSha256 is the version-independent digest
+          # the 1.0 promotion policy compares against the accepted
+          # 0.10.0 artifact. The static tests
+          # `tests/release/runtime-source-sha.test.mjs` pin the
+          # algorithm.
+          runtime_source_sha="$(node scripts/runtime-source-sha.mjs)"
           cat > "dist-pkg/opencode-ship-${ver}.qualification.json" <<EOF
           {
             "schemaVersion": 2,
@@ -558,6 +724,7 @@ jobs:
             "sourceTagSha": "${sha}",
             "gateHead": "${gate_head}",
             "toolVersion": "${ver}",
+            "runtimeSourceSha256": "${runtime_source_sha}",
             "tarball": {
               "name": "${tarball_name}",
               "sha256": "${tarball_sha}",
@@ -570,12 +737,14 @@ jobs:
               "assetDigest": "sha256:${tarball_sha}",
               "workflowRunUrl": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             },
+            "nodeVersions": ${node_versions_json},
             "evidence": {
               "sourceVerify": "${{ needs.source-verify.result }}",
               "pack": "${{ needs.pack.result }}",
               "consumerInstall": "${{ needs.consumer-install.result }}",
               "consumerTransitions": "${{ needs.consumer-transitions.result }}",
               "workflowE2e": "${{ needs.workflow-e2e.result }}",
+              "opencodeDiscovery": "${{ needs.opencode-discovery.result }}",
               "opencodeCompat": "${{ needs.opencode-compat.result }}",
               "nodeCompat": "${{ needs.node-compat.result }}",
               "releasePolicy": "${{ needs.release-policy.result }}"
@@ -591,7 +760,7 @@ jobs:
   publish:
     name: publish
     runs-on: ubuntu-latest
-    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-compat, node-compat, release-policy, qualification-report]
+    needs: [source-verify, pack, consumer-install, consumer-transitions, workflow-e2e, opencode-discovery, opencode-compat, node-compat, release-policy, qualification-report]
     timeout-minutes: 30
     permissions:
       contents: write
@@ -680,6 +849,20 @@ jobs:
           esac
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "dist-tag for ${PKG_VERSION} = ${tag}"
+      - name: resolve prerelease flag
+        # GitHub releases must mark SemVer prereleases
+        # (e.g. 0.10.0-rc.19) as `prerelease: true` so they do not
+        # appear in the "Latest" channel. Stable versions must be
+        # marked `prerelease: false`. The step output is consumed by
+        # the `publish release` step below; the static policy test
+        # `tests/release/release-metadata.test.mjs` proves both
+        # branches are wired through the same step so a regression
+        # cannot flip the channel silently.
+        id: prerelease
+        run: |
+          prerelease="$(node scripts/is-prerelease.mjs "${PKG_VERSION}")"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          echo "prerelease for ${PKG_VERSION} = ${prerelease}"
       - name: check npm version against registry
         id: npmcheck
         run: |
@@ -779,6 +962,13 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_REF }}
           name: opencode-ship ${{ env.PKG_VERSION }}
+          # Prerelease metadata is computed by the resolve-prelease
+          # step above from PKG_VERSION. RC / alpha / beta versions
+          # become `prerelease: true`; stable versions become
+          # `prerelease: false`. The local test
+          # `tests/release/release-metadata.test.mjs` proves the
+          # mapping for both branches.
+          prerelease: ${{ steps.prerelease.outputs.prerelease }}
           body: |
             ## opencode-ship ${{ env.PKG_VERSION }}
 

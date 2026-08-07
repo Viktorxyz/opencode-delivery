@@ -4,22 +4,68 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## Unreleased
 
-- The `release/1.0-completion` branch contains the complete
-  production runtime for the planned `0.10.0` release. No
-  `0.10.0` or `1.0.0` has been published; consumers should keep
-  using `opencode-ship@0.9.0`. The local `v0.10.0` and `v1.0.0`
-  tags are placeholders only and must not be pushed.
-- See `RELEASING.md` for the operational runbook and
-  `.git/opencode-ship/plans/opencode-ship-1.0-completion/execution-state.json`
-  for the authoritative task state.
+- The `release/0.10.0` branch is the live release branch carrying
+  the complete production runtime for the planned `0.10.0` and
+  `1.0.0` releases. Release candidates are published under the
+  `next` npm dist-tag. No `0.10.0` or `1.0.0` has been published;
+  consumers should keep using `opencode-ship@0.9.0`. The local
+  `v0.10.0` and `v1.0.0` tags are placeholders only and must not
+  be pushed.
+- See `docs/release/1.0.0-execution-plan.md` for the authoritative
+  execution plan and issue #37 for the bounded evidence ledger.
 
-### Shipped source on `release/1.0-completion` (not yet released)
+### Release-qualification gaps closed (S1)
 
-These changes are present in source on the
-`release/1.0-completion` branch but are not production-ready
-until the formal registry dogfood on the npm-published `0.10.0`
-succeeds. Items will move to a dated release header only after
-that step completes.
+These changes close the S1 release-qualification gaps on the
+`release/0.10.0` branch:
+
+- **Real Node compatibility lanes.** The `node-compat` job's
+  `setup-node` step now drives from `${{ matrix.node }}` for each
+  matrix row (`22.6.0`, current `22`, `24`); the trusted-publishing
+  `publish` job remains the only place that pins `22.14.0`. The
+  per-row observed `node --version` output is uploaded and
+  aggregated into the qualification report by
+  `scripts/compose-node-versions.mjs`.
+- **Real OpenCode startup and discovery smoke.** A new
+  `tests/release/opencode-discovery.test.mjs` boots a real
+  `opencode serve` instance against a packed-tarball fixture
+  with both `core` and `engineering` profiles, polls
+  `/global/health`, reads `/experimental/tool/ids`, and asserts
+  the canonical 24-tool set exported from
+  `tests/plugin/expected-tools.mjs`. The canonical set is the
+  single source of truth shared by the in-process plugin-load
+  test and the live-server smoke.
+- **Correct prerelease metadata.** The publish job now resolves a
+  `prerelease` flag from a dedicated step that delegates to
+  `scripts/is-prerelease.mjs`. SemVer prereleases (`-rc.N`,
+  `-alpha.N`, `-beta.N`) become `prerelease: true`; stable
+  versions become `prerelease: false`.
+- **Version-independent runtimeSourceSha256.** A new
+  `scripts/runtime-source-sha.mjs` computes a deterministic
+  digest over `src/**`, `assets/**`, `schema/**`, `vendor/**`,
+  `scripts/build.mjs`, `scripts/prepack.mjs`, and a normalised
+  `package.json` with the top-level `version` field removed.
+  The qualification report carries `runtimeSourceSha256`, and the
+  release-policy job refuses any `1.0.x` tag whose digest does
+  not match the accepted `0.10.0` qualification artifact
+  (via `scripts/promote-1.0-policy.mjs`).
+- **Truthful documentation.** README, CHANGELOG, and this file
+  no longer claim `release/1.0-completion` is the live branch,
+  no longer assert a stale test-count baseline, and no longer
+  promise a promotion rule that depends on equal source SHAs
+  between `0.10.0` and `1.0.0`.
+- **Stronger neutral-consumer assertions.**
+  `tests/package/neutral-consumer.test.mjs` now requires explicit
+  model IDs before any engineering install writes, asserts the
+  engineering install's exit code is `0` before doctor runs, and
+  covers the engineering-init-without-models failure path.
+
+### Shipped source on `release/0.10.0` (not yet released)
+
+These changes are present in source on the `release/0.10.0`
+branch but are not production-ready until the formal registry
+dogfood on the npm-published `0.10.0` succeeds. Items will move
+to a dated release header only after that step completes.
 
 - Crash-safe Git-common storage: link()-based atomic publication
   with rename() fallback, SHA-256 hashed resource locks, explicit
@@ -76,7 +122,7 @@ that step completes.
 
 ### Planned (not yet shipped)
 
-These changes are present in source on the `release/1.0-completion` branch but are not production-ready and have not been published. Items will move to a dated release header only after the relevant plan task is verified end-to-end and the formal registry dogfood passes.
+These changes are present in source on the `release/0.10.0` branch but are not production-ready and have not been published. Items will move to a dated release header only after the relevant plan task is verified end-to-end and the formal registry dogfood passes.
 
 - Lock schema v3 with a `scope` field per root pointer record (core | engineering) and byte-stable hash identity.
 - `src/state/git-common-dir.js` and `src/state/durable-store.js` for the shared crash-safe storage under the resolved Git common directory.
