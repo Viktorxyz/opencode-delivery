@@ -5,10 +5,11 @@ All notable changes to `opencode-ship` are recorded here.
 ## Unreleased
 
 - `1.0.0` is on `npm dist-tag latest`; `0.10.0` stable is on
-  `npm dist-tag next`. The `1.0.0` tag was promoted from the
-  same runtime source as `0.10.0` so the version-independent
-  `runtimeSourceSha256` digest is preserved across both
-  releases (CI-reported digest
+  `npm dist-tag next`. The `release/0.10.0` branch is the live
+  release branch for both releases; the `1.0.0` tag was promoted
+  from the same runtime source as `0.10.0` so the
+  version-independent `runtimeSourceSha256` digest is preserved
+  across both releases (CI-reported digest
   c750d709dd68dc3663eef3890d5b9d8f8a1ec3b14eae011382e151874cb50c89).
 - The S5 real 14-step dogfood was skipped because the OpenAI
   OAuth credential in `~/.local/share/opencode/auth.json`
