@@ -2,17 +2,34 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
-## 1.1.0 — Engineering-only, easy setup, skill discovery
+## 1.1.0 — Engineering-only, easy setup, skill discovery (2026-08-08)
 
-Stable release. The 1.1.0-rc.1 tag was promoted to `latest`
-after the qualification pipeline passed green on every matrix
-lane (npm x pnpm, opencode 1.15.5 + 1.18.10) and the
-runtime-source digest was preserved between rc.1 and 1.1.0
-(only the `package.json` version, the README "Status" section,
-and this changelog header changed). The S5 real 14-step
-dogfood is still pending a valid OpenAI provider credential; the
-1.0.0 line's published 0.10.0 digest is the runtime source
-witness for both 0.10.0 and 1.1.0.
+Stable release. Promoted to `npm dist-tag latest` after the
+qualification pipeline passed green on every matrix lane
+(npm x pnpm, opencode 1.15.5 + 1.18.10) and the runtime-source
+digest was preserved between rc.1 and 1.1.0 (only the
+`package.json` version, the README "Status" section, and this
+changelog header changed).
+
+Distribution:
+
+```text
+npm dist-tags
+  latest: 1.1.0
+  next:   1.0.0
+```
+
+Verification:
+
+```text
+npm install --prefix /tmp/fresh opencode-ship@latest
+node_modules/.bin/opencode-ship --version
+# prints: opencode-ship 1.1.0
+```
+
+The S5 real 14-step dogfood is still pending a valid OpenAI
+provider credential; the 1.0.0 line's published 0.10.0 digest
+is the runtime source witness for both 0.10.0 and 1.1.0.
 
 The breaking change set, the engineering-only `init` flow, the
 `setup-ship-workflow` skill, the `find-skills` discovery
