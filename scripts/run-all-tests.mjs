@@ -10,7 +10,9 @@ function discover(dir, out = []) {
     const st = statSync(path);
     if (st.isDirectory()) {
       discover(path, out);
-    } else if (entry.endsWith(".test.mjs")) {
+    } else if (entry.endsWith(".test.mjs")
+        && !entry.endsWith(".skip.test.mjs")
+        && !entry.includes(".core-removed.")) {
       out.push(path);
     }
   }

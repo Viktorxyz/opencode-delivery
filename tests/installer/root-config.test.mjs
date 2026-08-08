@@ -211,7 +211,7 @@ test("end-to-end: engineering init does not overwrite existing Plan Mode permiss
   assert.deepEqual(doc.agent.plan.permission, existing);
 });
 
-test("end-to-end: init --profile core does NOT inject the Plan Mode block", async (t) => {
+test("end-to-end: init --profile core is rejected (core removed in 1.1.0)", async (t) => {
   const { runInit } = await import("../../src/installer/commands/init.js");
   const { makeProject, cleanProject } = await import("../fixtures/installer-fixture.mjs");
   const { parent, repoRoot } = await makeProject();
@@ -222,18 +222,6 @@ test("end-to-end: init --profile core does NOT inject the Plan Mode block", asyn
     profile: "core",
     forceRootConfig: true,
   });
-  assert.equal(r.exitCode, 0, r.stderr || r.stdout);
-  // The lock must not record the Plan Mode block when the
-  // consumer is on the core profile.
-  const { readFileSync } = await import("node:fs");
-  const { resolve } = await import("node:path");
-  const lock = JSON.parse(readFileSync(resolve(repoRoot, ".opencode/ship.lock.json"), "utf8"));
-  const recorded = new Set(
-    (lock.manager?.rootDocuments ?? []).flatMap((d) => (d.pointers ?? []).map((p) => p.pointer)),
-  );
-  assert.equal(
-    recorded.has("/agent/plan/permission"),
-    false,
-    "core profile must not record the Plan Mode pointer",
-  );
+  // core was removed in 1.1.0; init should fail with exit 2
+  assert.equal(r.exitCode, 2, r.stderr || r.stdout);
 });

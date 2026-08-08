@@ -1,30 +1,31 @@
 /*
  * opencode-ship profile model.
  *
- * Profiles are mutually exclusive named sets of managed files. The
- * installer ships two profiles:
+ * From 1.1.0 onward, the only shipped profile is `engineering`. The
+ * `core` profile was removed in the 1.1.0 hard cut because every
+ * consumer that today still relies on a `core` installation is
+ * either (a) a consumer of a 0.9.x or 1.0.x line that should run
+ * `/setup-ship-workflow` and adopt the full lifecycle, or (b) a
+ * test fixture that should now use the `engineering` profile and
+ * stop verifying the reduced footprint.
  *
- *   - core:        the default; ships the canonical plugin, two
- *                  delivery agents, and two delivery skills. Stable
- *                  across every v0.x release.
- *   - engineering: opt-in; extends core with the Matt + Superpowers
- *                  planning and execution skills plus matching
- *                  agents. Installed only when the consumer
- *                  explicitly asks for it.
+ * A consumer whose `ship.config.json` or `ship.lock.json` declares
+ * `core` is upgraded to `engineering` on the next `init` or
+ * `update`. The CLI refuses `--profile core` with exit 2.
  *
  * The profile is resolved per-invocation using precedence:
  *   1. explicit CLI flag (--profile <name>)        (caller-provided)
  *   2. ship.config.json `.profile` field           (user-owned)
  *   3. existing lock `.manager.profile` field      (machine record)
- *   4. default (core)
+ *   4. default (engineering)
  *
- * An unknown profile always fails the invocation with exit code 2
- * (invalid input). Legacy v0.3 locks without a profile field load
- * as core; the migration happens lazily on next init/update.
+ * Unknown profiles always fail with exit 2. Legacy v0.3 locks
+ * without a profile field load as engineering; the migration
+ * happens lazily on next init/update.
  */
 
-export const PROFILES = Object.freeze(["core", "engineering"]);
-export const DEFAULT_PROFILE = "core";
+export const PROFILES = Object.freeze(["engineering"]);
+export const DEFAULT_PROFILE = "engineering";
 
 export function isValidProfile(name) {
   return typeof name === "string" && PROFILES.includes(name);
@@ -34,6 +35,10 @@ export function normalizeProfile(name) {
   if (name === undefined || name === null) return DEFAULT_PROFILE;
   if (!isValidProfile(name)) return null;
   return name;
+}
+
+export function isLegacyCoreProfile(name) {
+  return name === "core";
 }
 
 /**
@@ -54,15 +59,21 @@ export function resolveProfile({ cli = null, config = null, lock = null } = {}) 
   if (cli !== null && cli !== undefined) {
     const v = normalizeProfile(cli);
     if (v === null) {
-      throw new Error(`unknown CLI profile '${cli}' (expected one of: ${PROFILES.join(", ")})`);
+      throw new Error(
+        `unknown CLI profile '${cli}' (only 'engineering' is supported in 1.1.0; the 'core' profile was removed)`
+      );
     }
     return { profile: v, source: "cli" };
   }
   if (config && typeof config === "object" && config.profile !== undefined && config.profile !== null) {
     const v = normalizeProfile(config.profile);
     if (v === null) {
+      // Legacy core config: promote to engineering.
+      if (isLegacyCoreProfile(config.profile)) {
+        return { profile: DEFAULT_PROFILE, source: "default" };
+      }
       throw new Error(
-        `unknown ship.config.json profile '${config.profile}' (expected one of: ${PROFILES.join(", ")})`,
+        `unknown ship.config.json profile '${config.profile}' (only 'engineering' is supported in 1.1.0)`
       );
     }
     return { profile: v, source: "config" };
@@ -70,8 +81,12 @@ export function resolveProfile({ cli = null, config = null, lock = null } = {}) 
   if (lock && typeof lock === "object" && lock.manager && lock.manager.profile !== undefined) {
     const v = normalizeProfile(lock.manager.profile);
     if (v === null) {
+      // Legacy core lock: promote to engineering.
+      if (isLegacyCoreProfile(lock.manager.profile)) {
+        return { profile: DEFAULT_PROFILE, source: "default" };
+      }
       throw new Error(
-        `unknown lock manager.profile '${lock.manager.profile}' (expected one of: ${PROFILES.join(", ")})`,
+        `unknown lock manager.profile '${lock.manager.profile}' (only 'engineering' is supported in 1.1.0)`
       );
     }
     return { profile: v, source: "lock" };

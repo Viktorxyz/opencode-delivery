@@ -2,17 +2,48 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** `1.0.0` is on `npm dist-tag latest` (manually promoted by the maintainer). `0.10.0` stable is on `npm dist-tag next`. The `release/0.10.0` branch is the live release branch and the source of truth for both releases; the `1.0.0` tag was promoted from the same runtime source as `0.10.0` so the version-independent `runtimeSourceSha256` is preserved across both releases (CI-reported digest c750d709dd68dc3663eef3890d5b9d8f8a1ec3b14eae011382e151874cb50c89). The S5 real 14-step dogfood was skipped because the OpenAI provider credential in `~/.local/share/opencode/auth.json` expired (48 days) and the opencode CLI 1.18.15 cannot dispatch to `openai/gpt-5.6-sol` or `minimax/MiniMax-M3` regardless of the `--model` flag form; the dogfood fixture is preserved at `https://github.com/Viktorxyz/opencode-ship-dogfood` for re-execution once a valid provider credential is supplied. The npm CLI registry operation `npm view opencode-ship dist-tags` returns `{latest:1.0.0, next:0.10.0, candidate:1.0.0}` and `npm install opencode-ship@latest --prefix /tmp/fresh` + `node_modules/.bin/opencode-ship --version` prints `1.0.0`. See `docs/release/1.0.0-execution-plan.md` for the authoritative execution plan and issue #37 for the bounded evidence ledger.
+> **Status:** `1.1.0-rc.1` is the next release. From 1.1.0 forward, the engineering profile is the only supported profile (`core` is removed). `init` works as a one-liner: `pnpm dlx opencode-ship@latest init`. The user fills in the AI model roles through a one-shot `setup-ship-workflow` skill that runs after the install. Skill discovery is integrated; trusted-source skills auto-install locally to the repo. The deep-research gate now asks first and only generates a prompt on explicit consent. See `docs/release/1.1.0-execution-plan.md` for the authoritative plan.
 >
-> Consumers should use `opencode-ship@1.0.0` (or `opencode-ship@latest`). The previous `0.9.0` is no longer the latest.
+> Consumers should use `opencode-ship@1.1.0` (or `opencode-ship@latest`). The previous `1.0.0` line remains on `npm dist-tag latest` until 1.1.0 promotion; `0.10.0` stable is on `npm dist-tag next`.
 
 ---
 
+## Quick start (1.1.0+)
+
+```sh
+# 1. Install managed files. No flags required.
+pnpm dlx opencode-ship@latest init
+
+# 2. Restart OpenCode in this repo.
+
+# 3. In chat, run the one-shot setup skill:
+/setup-ship-workflow
+
+# 4. The skill asks for:
+#    - issue tracker (GitHub / GitLab / local / other)
+#    - triage labels (defaults are fine)
+#    - domain docs (single-context default)
+#    - AI model roles (planner / builder / finalReviewer)
+#    - AGENTS.md / CLAUDE.md block
+
+# 5. Start work. The controller drives everything.
+Ship issue 1
+# or
+Ship issue 1   (after opening an issue with a real description)
+```
+
+The `init` command succeeds without any model flags. The setup skill writes the per-repo configuration. The controller refuses to dispatch until the setup is complete.
+
 ## What this package is
 
-`opencode-ship` is the npm-distributed successor to `opencode-delivery`. It bundles:
+`opencode-ship` is the npm-distributed successor to `opencode-delivery`. From 1.1.0 it bundles:
 
-- a **nine-tool OpenCode plugin** that auto-loads from `.opencode/plugins/opencode-ship.js`;
+- a **24-tool OpenCode plugin** that auto-loads from `.opencode/plugins/opencode-ship.js`;
+- **8 ship agents** (controller, planner, builder, task-reviewer, final-standards-reviewer, final-spec-reviewer) plus the two legacy delivery agents (reviewer, verifier);
+- **3 ship commands** (`ship-deliver`, `ship-resume`, `ship-status`) plus the new one-shot `setup-ship-workflow`;
+- **26 skills** (delivery-workflow, planning-research-checkpoint, the Matt + Superpowers engineering catalog, the new setup-ship-workflow and skill-discovery);
+- **setup-ship-workflow skill** that walks the user through tracker / labels / docs / model roles;
+- **skill-discovery** that auto-installs trusted-source skills from the open agent skills ecosystem.
 - a **lifecycle state machine** for one issue → one worktree → one PR → one merge → one cleanup;
 - a **Git worktree driver** (no rebase-after-push, no force-push, no `--force-with-lease`);
 - a **GitHub CLI driver** that talks only to typed `gh pr/issue` verbs (never `gh api`);

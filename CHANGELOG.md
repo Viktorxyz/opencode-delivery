@@ -2,6 +2,88 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 1.1.0-rc.1 — One-liner install, easy setup, skill discovery
+
+### Breaking changes
+
+- **The `core` profile is removed.** `init --profile core` now
+  fails with exit 2 and a clear message. Every consumer on the
+  `1.1.x` line installs the engineering profile, which is the
+  superset of the previous core surface. Existing locks declaring
+  `manager.profile: "core"` are upgraded to `engineering` on the
+  next `init` or `update`. There is no migration of bytes — the
+  engineering catalog is a strict superset of the core catalog.
+
+### Added
+
+- **One-liner install.** `pnpm dlx opencode-ship@latest init` works
+  without any flags. The installer writes the full engineering
+  catalog and a `ship.config.json` with an empty `workflow.models`
+  block. The setup-pending marker
+  (`.opencode/ship.setup-pending.json`) is written so the
+  controller knows to route the first `ship-deliver` through the
+  setup skill.
+- **One-shot `setup-ship-workflow` skill.** Run via
+  `/setup-ship-workflow` in chat, or automatically by `ship-deliver`
+  when the setup-pending marker is present. The skill walks the
+  user through:
+  1. issue tracker (GitHub / GitLab / local markdown / other);
+  2. triage labels (default is `needs-triage`, `needs-info`,
+     `ready-for-agent`, `ready-for-human`, `wontfix`);
+  3. domain docs (single-context default, multi-context for
+     monorepos);
+  4. AI model roles (planner / builder / finalReviewer) with
+     `openai/gpt-5.6-sol` and `minimax/MiniMax-M3` defaults;
+  5. provider auth probe (`opencode providers list`);
+  6. permissions sanity (`opencode-ship doctor`);
+  7. AGENTS.md / CLAUDE.md block.
+  Re-running the skill is safe and idempotent.
+- **Skill discovery** (`assets/skills/skill-discovery/SKILL.md` and
+  `src/tools/skill-discovery.js`). The controller runs
+  `npx skills find <query>` before planning; trusted-source skills
+  (default: `vercel-labs`, `anthropics`, `obra`, `mattpocock`,
+  `ComposioHQ`) auto-install project-locally. Non-trusted
+  candidates are presented to the user. Allowlist and
+  `minInstalls` threshold are configurable via
+  `ship.config.json#skillDiscovery`.
+- **Ask-first deep-research gate.** The
+  `planning-research-checkpoint` skill now asks the user one
+  question before generating any research prompt. Default path
+  is "no research, continue with the plan as written", saving
+  tokens. The research prompt is only generated on explicit
+  consent.
+
+### Changed
+
+- `init` no longer requires `--planner-model` / `--builder-model`
+  / `--final-reviewer-model` flags. The flags remain available as
+  overrides for users who know exactly which models they want.
+- `ship.config.json#workflow.models` is now optional at install
+  time. The ship controller refuses to dispatch
+  (`ship-deliver`) until all three role ids are populated, or
+  routes through `/setup-ship-workflow` automatically.
+- `ship.config.json#profile` is the engineering profile. The CLI
+  still accepts `--profile engineering` (no-op) but rejects
+  `--profile core` with a helpful error.
+- The release qualification workflow now publishes under the
+  `candidate` dist-tag for 1.1.x and `next` for 0.10.x. 1.1.0 is
+  promoted to `latest` after the formal S5 dogfood passes (or after
+  a maintainer-approved exception is recorded in issue #37).
+- README, RELEASING, and this changelog are rewritten for the
+  one-liner install + setup-skill flow.
+
+### Fixed
+
+- WP0.1: the duplicate skill frontmatter `name: setup-matt-pocock-skills`
+  (set on both `setup-engineering-workflow` and
+  `engineering-workflow` SKILL.md files) is fixed; the
+  setup skill is now `setup-ship-workflow` and the workflow
+  reference is `engineering-workflow`.
+- The installer previously refused to commit if
+  `workflow.models` was incomplete. The new flow accepts the
+  empty-models state and relies on the setup skill to populate
+  them. Existing 1.0.x locks continue to work.
+
 ## Unreleased
 
 - `1.0.0` is on `npm dist-tag latest`; `0.10.0` stable is on

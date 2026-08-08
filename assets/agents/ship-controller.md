@@ -34,6 +34,8 @@ permission:
     "git worktree remove *": deny
     "git worktree prune *": deny
     "gh *": deny
+    "npx skills find *": allow
+    "npx skills add *": allow
     "node *": allow
     "npm *": allow
     "pnpm *": allow
@@ -77,6 +79,8 @@ permission:
   ship_resume: allow
   ship_status: allow
   ship_deliver: allow
+  ship_skill_discover: allow
+  ship_skill_install: allow
 ---
 
 # ship-controller

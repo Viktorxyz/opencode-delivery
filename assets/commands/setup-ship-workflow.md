@@ -1,7 +1,5 @@
 ---
-name: setup-ship-workflow
-description: First-run setup of opencode-ship. Walks the user through issue tracker, triage labels, domain docs, and AI model roles. Run once after `init` with /setup-ship-workflow.
-disable-model-invocation: true
+description: Configure the opencode-ship workflow for this repo: issue tracker, triage labels, domain docs, and AI model roles. Run once after `init` with /setup-ship-workflow.
 ---
 
 # Setup Ship Workflow
@@ -28,6 +26,7 @@ ls -la AGENTS.md CLAUDE.md docs/ .opencode/ 2>/dev/null || true
 cat .opencode/opencode.json 2>/dev/null || true
 cat .opencode/ship.config.json 2>/dev/null || true
 cat .opencode/ship.lock.json 2>/dev/null || true
+cat .opencode/ship.setup-pending.json 2>/dev/null || true
 opencode providers list 2>/dev/null || true
 ```
 
@@ -81,7 +80,7 @@ Alternatives to mention if the user has no OpenAI/MiniMax:
 - Google: `google/gemini-2.5-pro`, `google/gemini-2.5-flash`
 - Or any `<provider>/<model>` string the user has credentials for
 
-After the user answers, **update `.opencode/ship.config.json`** so workflow looks like:
+After the user answers, **update `.opencode/ship.config.json`** so it looks like:
 
 ```json
 {

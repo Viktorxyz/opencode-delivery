@@ -26,7 +26,7 @@ import {
   planUninstall,
 } from "./planner.js";
 import { readValidatedLock, writeLock, CURRENT_LOCK_SCHEMA } from "./lock.js";
-import { loadConfig, writeConfig, renderDefaultConfig } from "./config.js";
+import { loadConfig, writeConfig, renderDefaultConfig, hasCompletedModels } from "./config.js";
 import { bytesHashString } from "./hash.js";
 import { stableStringify } from "./json-pointer.js";
 import { detectProject } from "./detection/project.js";
@@ -80,10 +80,13 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     lock,
   });
 
-  // Fail-closed engineering: when the resolved profile is engineering,
-  // the synthesis must produce a V2 config with all three explicit
-  // models and the fixed approval policy. CLI overrides are merged
-  // last so the highest-precedence source wins.
+  // The engineering profile is the only supported profile in 1.1.0.
+  // Models are no longer required at install time: the user can
+  // either pass --planner-model/--builder-model/--final-reviewer-model
+  // flags or fill them in interactively via the setup-ship-workflow
+  // skill that runs after `init`. The approval block is always
+  // synthesised by the installer because it has no user-tunable
+  // values.
   if (resolved.profile === "engineering") {
     const candidate = await planConfigSynthesis({
       repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
@@ -92,14 +95,7 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     });
     if (candidate.kind === "create" || candidate.kind === "update") {
       const configValue = candidate.configValue;
-      if (!configValue.workflow || !configValue.workflow.models) {
-        return { ok: false, error: { kind: "engineering-models-required", message: "engineering profile requires workflow.models.{planner,builder,finalReviewer}" } };
-      }
-      const { planner, builder, finalReviewer } = configValue.workflow.models;
-      if (!planner || !builder || !finalReviewer) {
-        return { ok: false, error: { kind: "engineering-models-required", message: "all three workflow.models.* are required" } };
-      }
-      if (!configValue.workflow.approval || !configValue.workflow.approval.mirrorToIssue || configValue.workflow.approval.maxFailedRounds !== 3) {
+      if (!configValue.workflow || !configValue.workflow.approval) {
         return { ok: false, error: { kind: "engineering-approval-required", message: "engineering profile requires workflow.approval.{mirrorToIssue:true, maxFailedRounds:3}" } };
       }
     }
@@ -120,6 +116,7 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
   const configPlan = await planConfigSynthesis({
     repoRoot, detection, lock, forceOverwrite: Boolean(forceConfig),
     migrationSeed: migrationReport?.proposedConfigSeed ?? null,
+    models,
   });
   const filePlan = await planFileInstall({ repoRoot, lock, allowUnowned: Boolean(replaceManaged), catalog: activeCatalog });
   const staleFilePlan = await planStaleFileRemoval({ repoRoot, lock, staleCatalog });
@@ -138,6 +135,16 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     : null;
   const rootPlan = await planRootConfigApply({ repoRoot, lock, forceRepair: Boolean(forceRootConfig), planMode });
 
+  // When the engineering profile is being applied without models
+  // we mark the consumer as "setup pending" so the controller
+  // routes ship-deliver through /setup-ship-workflow until the
+  // workflow.models fields are populated. The marker is removed by
+  // the setup-ship-workflow skill on success.
+  const setupPending = resolved.profile === "engineering"
+    && !lock?.manager?.setupComplete
+    && !hasCompletedModels(configValue?.workflow?.models ?? {})
+    && !models?.planner;
+
   const plan = [...(filePlan ?? []), ...staleFilePlan, ...migrationPlan, configPlan, rootPlan];
   const conflicts = plan.filter((p) => p && p.kind === "conflict");
   const summary = summarise(plan);
@@ -153,6 +160,7 @@ export async function previewInstall({ rootPath, profile = null, replaceManaged,
     conflicts,
     summary,
     migrationReport,
+    setupPending,
   };
 }
 
@@ -190,7 +198,7 @@ function summarise(plan) {
   return counts;
 }
 
-async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, profile = null }) {
+async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, profile = null, models = null }) {
   const files = [];
   const remain = lock?.files?.filter((f) => !plan.some((op) => op?.relPath === f.path)) ?? [];
 
@@ -224,6 +232,16 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, profil
   const hasRootDocuments = (rootPlan?.pointerRecords && rootPlan.pointerRecords.length > 0)
     || (lock?.manager?.rootDocuments && lock.manager.rootDocuments.length > 0);
 
+  // Models are considered "complete" once all three roles are
+  // populated in the assembled config. The setupComplete flag
+  // tells the controller that dispatch can begin; the absence of
+  // this flag (or setupPending=true in the preview) forces the
+  // ship-deliver controller to route through /setup-ship-workflow.
+  const configModels = configPlan?.configValue?.workflow?.models
+    ?? lock?.manager?.config?.models
+    ?? {};
+  const completedModels = hasCompletedModels({ workflow: { models: configModels } });
+
   return {
     contractVersion: CURRENT_LOCK_SCHEMA,
     manager: {
@@ -231,11 +249,9 @@ async function assembleLock({ repoRoot, plan, lock, configPlan, rootPlan, profil
       name: "opencode-ship",
       version: process.env.OPENCODE_SHIP_VERSION ?? PACKAGE_VERSION,
       templateSet: TEMPLATE_SET_ID,
-      // Newly written locks always carry the resolved profile so
-      // future CLI invocations without --profile still resolve to
-      // the same choice through the lock-precedence layer.
       profile: profile ?? lock?.manager?.profile,
       appliedAt: new Date().toISOString(),
+      setupComplete: completedModels,
       config: {
         path: ".opencode/ship.config.json",
         sha256: configSha ?? lock?.manager?.config?.sha256 ?? "",
