@@ -2,6 +2,24 @@
 
 All notable changes to `opencode-ship` are recorded here.
 
+## 1.1.0 — Engineering-only, easy setup, skill discovery
+
+Stable release. The 1.1.0-rc.1 tag was promoted to `latest`
+after the qualification pipeline passed green on every matrix
+lane (npm x pnpm, opencode 1.15.5 + 1.18.10) and the
+runtime-source digest was preserved between rc.1 and 1.1.0
+(only the `package.json` version, the README "Status" section,
+and this changelog header changed). The S5 real 14-step
+dogfood is still pending a valid OpenAI provider credential; the
+1.0.0 line's published 0.10.0 digest is the runtime source
+witness for both 0.10.0 and 1.1.0.
+
+The breaking change set, the engineering-only `init` flow, the
+`setup-ship-workflow` skill, the `find-skills` discovery
+wiring, and the ask-first deep-research gate all carry forward
+unchanged from rc.1; see the rc.1 section below for the full
+list.
+
 ## 1.1.0-rc.1 — One-liner install, easy setup, skill discovery
 
 ### Breaking changes

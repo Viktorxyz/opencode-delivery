@@ -806,8 +806,17 @@ jobs:
         id: disttag
         run: |
           case "${PKG_VERSION}" in
+            # RCs and pre-releases always publish under `next`; the
+            # maintainer promotes the accepted RC to `latest` by hand
+            # so a bad RC can never reach `latest` automatically.
             *-rc.*|*-alpha.*|*-beta.*) tag=next;;
-            1.0.*) tag=candidate;;
+            # Legacy stable line: 1.0.x stays on `next` because
+            # 1.1.0 owns `latest`. A future 1.0.x patch would still
+            # land on `next`.
+            1.0.*) tag=next;;
+            # 1.1.x and later stable releases: publish under `next`
+            # first. The maintainer runs `npm dist-tag add
+            # opencode-ship@<v> latest` once the rc dogfood passes.
             *) tag=next;;
           esac
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"

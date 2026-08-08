@@ -2,9 +2,9 @@
 
 > npm-distributed OpenCode installer and delivery plugin: a single command materialises the lifecycle plugin, reviewer/verifier agents, and skills into any consumer repository, with a recoverable lock and never silently overwrites managed files.
 >
-> **Status:** `1.1.0-rc.1` is the next release. From 1.1.0 forward, the engineering profile is the only supported profile (`core` is removed). `init` works as a one-liner: `pnpm dlx opencode-ship@latest init`. The user fills in the AI model roles through a one-shot `setup-ship-workflow` skill that runs after the install. Skill discovery is integrated; trusted-source skills auto-install locally to the repo. The deep-research gate now asks first and only generates a prompt on explicit consent. See `docs/release/1.1.0-execution-plan.md` for the authoritative plan.
+> **Status:** `1.1.0` is on `npm dist-tag latest`. `1.0.0` is on `npm dist-tag next`. `release/0.10.0` is the historical live release branch; `release/1.1.0-engineering-only` ships the engineering profile directly without a separate `core` profile. From 1.1.0 forward the engineering profile is the only supported profile; the previous `core` profile was removed in the 1.1.0 hard cut. `init` works as a one-liner: `pnpm dlx opencode-ship@latest init`. The user fills in the AI model roles through a one-shot `setup-ship-workflow` skill that runs after the install. Skill discovery is integrated; trusted-source skills auto-install locally to the repo. The deep-research gate now asks first and only generates a prompt on explicit consent. See `docs/release/1.1.0-execution-plan.md` for the authoritative plan.
 >
-> Consumers should use `opencode-ship@1.1.0` (or `opencode-ship@latest`). The previous `1.0.0` line remains on `npm dist-tag latest` until 1.1.0 promotion; `0.10.0` stable is on `npm dist-tag next`.
+> Consumers should use `opencode-ship@1.1.0` (or `opencode-ship@latest`).
 
 ---
 
