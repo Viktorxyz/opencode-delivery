@@ -4,13 +4,22 @@ All notable changes to `opencode-ship` are recorded here.
 
 ## Unreleased
 
-- The `release/0.10.0` branch is the live release branch carrying
-  the complete production runtime for the planned `0.10.0` and
-  `1.0.0` releases. Release candidates are published under the
-  `next` npm dist-tag. No `0.10.0` or `1.0.0` has been published;
-  consumers should keep using `opencode-ship@0.9.0`. The local
-  `v0.10.0` and `v1.0.0` tags are placeholders only and must not
-  be pushed.
+- `1.0.0` is on `npm dist-tag latest`; `0.10.0` stable is on
+  `npm dist-tag next`. The `1.0.0` tag was promoted from the
+  same runtime source as `0.10.0` so the version-independent
+  `runtimeSourceSha256` digest is preserved across both
+  releases (CI-reported digest
+  c750d709dd68dc3663eef3890d5b9d8f8a1ec3b14eae011382e151874cb50c89).
+- The S5 real 14-step dogfood was skipped because the OpenAI
+  OAuth credential in `~/.local/share/opencode/auth.json`
+  expired (48 days ago) and the opencode CLI 1.18.15 cannot
+  dispatch to `openai/gpt-5.6-sol` or `minimax/MiniMax-M3`.
+  The dogfood fixture is preserved at
+  `https://github.com/Viktorxyz/opencode-ship-dogfood` for
+  re-execution once a valid provider credential is supplied.
+  The npm CLI verification (`npm install opencode-ship@latest`
+  + `node_modules/.bin/opencode-ship --version`) prints
+  `1.0.0`, confirming the published artefact is reachable.
 - See `docs/release/1.0.0-execution-plan.md` for the authoritative
   execution plan and issue #37 for the bounded evidence ledger.
 
